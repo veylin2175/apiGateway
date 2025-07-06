@@ -10,18 +10,8 @@ import (
 // Config анмаршлит данные из конфига в структуры
 type Config struct {
 	Env        string     `yaml:"env" env-default:"local"`
-	Database   Database   `yaml:"database"`
 	HTTPServer HTTPServer `yaml:"http_server"`
 	Kafka      Kafka      `yaml:"kafka"`
-}
-
-type Database struct {
-	Host     string `yaml:"host" env-default:"localhost"`
-	Port     int    `yaml:"port" env-default:"5432"`
-	User     string `yaml:"user" env-default:"postgres"`
-	Password string `yaml:"password" env-required:"true"`
-	DBName   string `yaml:"dbname" env-required:"true"`
-	SSLMode  string `yaml:"sslmode" env-default:"disable"`
 }
 
 type HTTPServer struct {
