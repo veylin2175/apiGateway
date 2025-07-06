@@ -12,6 +12,7 @@ type Config struct {
 	Env        string     `yaml:"env" env-default:"local"`
 	HTTPServer HTTPServer `yaml:"http_server"`
 	Kafka      Kafka      `yaml:"kafka"`
+	//Blockchain Blockchain `yaml:"blockchain"`
 }
 
 type HTTPServer struct {
@@ -26,6 +27,12 @@ type Kafka struct {
 	GroupID         string   `yaml:"group_id" env-default:"voting-service"`
 	AutoOffsetReset string   `yaml:"auto_offset_reset" env-default:"earliest"`
 	MaxPollRecords  int      `yaml:"max_poll_records" env-default:"1"`
+}
+
+type Blockchain struct {
+	EthRpcUrl       string `yaml:"eth_rpc_url" env-required:"true"`
+	ContractAddress string `yaml:"contract_address" env-required:"true"`
+	PrivateKey      string `yaml:"private_key" env-required:"true"`
 }
 
 // MustLoad выгружает данные с конфига по пути до файла
