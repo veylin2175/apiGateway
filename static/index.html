@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blockchain Voting</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<header class="header">
+    <div class="header-left">
+        <div class="logo">VoteChain</div>
+        <nav class="nav">
+            <a href="/" class="nav-link active">Все голосования</a>
+            <a href="/my-votings" class="nav-link">Мои голосования</a>
+            <a href="/subscriptions" class="nav-link">Мои подписки</a>
+        </nav>
+    </div>
+    <div class="profile">Профиль</div>
+</header>
+
+<main class="main-content">
+    <div class="votings-list" id="votingsList">
+        <!-- Голосования будут загружены через JS -->
+    </div>
+</main>
+
+<div class="create-button" id="createButton">+</div>
+
+<div class="modal" id="createModal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Создать голосование</h2>
+
+        <div class="form-group">
+            <label for="voteTitle">Название</label>
+            <input type="text" id="voteTitle" maxlength="100">
+        </div>
+
+        <div class="form-group">
+            <label for="voteDescription">Описание</label>
+            <textarea id="voteDescription" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Тип голосования</label>
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="voteType" value="public" checked>
+                    Публичное
+                </label>
+                <label>
+                    <input type="radio" name="voteType" value="private">
+                    Приватное
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="minVotes">Минимальное количество голосов</label>
+            <input type="number" id="minVotes" min="1" value="1">
+        </div>
+
+        <div class="form-group">
+            <label for="endDate">Дата окончания</label>
+            <input type="datetime-local" id="endDate">
+        </div>
+
+        <div class="form-group">
+            <label>Варианты ответов (макс. 4)</label>
+            <div id="optionsContainer">
+                <input type="text" class="vote-option" placeholder="Вариант 1" maxlength="100">
+                <input type="text" class="vote-option" placeholder="Вариант 2" maxlength="100">
+            </div>
+            <button type="button" id="addOption">+ Добавить вариант</button>
+        </div>
+
+        <div class="form-actions">
+            <button id="cancelCreate">Отменить</button>
+            <button id="submitVoting">Создать</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
