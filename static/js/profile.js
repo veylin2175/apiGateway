@@ -102,16 +102,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             const statusClass = now > endDate ? 'status-finished' : 'status-active';
             const statusText = now > endDate ? 'Закончено' : 'Активное';
 
-            // Placeholder для вердикта и количества проголосовавших
-            const userVerdict = voting.user_vote ? `Вариант ${voting.user_vote + 1}` : 'Не голосовал';
-            const votesCount = voting.votes_count || 0; // Предполагаем, что бэкенд будет возвращать votes_count
+            // Ваш вердикт: если user_vote есть, отображаем название варианта, иначе "Не голосовал"
+            let userVerdictText = 'Не голосовал';
+            if (voting.user_vote !== undefined && voting.user_vote !== null) {
+                // Предполагаем, что у нас есть доступ к options голосования,
+                // но в текущей UserVotingDetail их нет. Для MVP, пока просто покажем индекс.
+                // В реальной системе нужно либо передавать options в UserVotingDetail,
+                // либо делать дополнительный запрос за деталями голосования.
+                // Пока используем просто "Вариант N"
+                userVerdictText = `Вариант ${voting.user_vote + 1}`; // +1 потому что индексы 0-based
+            }
+
+            // Внимание: Если вы хотите показать само название варианта ("Синий", "Да"),
+            // то вам нужно будет либо передавать массив options в UserVotingDetail
+            // (что усложнит структуру), либо делать дополнительный запрос на /voting/{id}
+            // для каждого голосования в профиле, чтобы получить его опции.
+            // Для простоты MVP, оставим "Вариант N"
+
+            const votesCount = voting.votes_count || 0;
 
             row.innerHTML = `
-                <td>${voting.title}</td>
-                <td>${votesCount}</td>
-                <td>${userVerdict}</td>
-                <td class="${statusClass}">${statusText}</td>
-            `;
+            <td>${voting.title}</td>
+            <td>${votesCount}</td>
+            <td>${userVerdictText}</td>
+            <td class="${statusClass}">${statusText}</td>
+        `;
             userVotingsTableBody.appendChild(row);
         });
     };
