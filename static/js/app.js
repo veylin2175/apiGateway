@@ -38,6 +38,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Отправка формы
     submitButton.addEventListener('click', async () => {
+        const userAddress = localStorage.getItem('userAddress'); // Получаем адрес из localStorage
+        if (!userAddress) {
+            alert('Для создания голосования необходимо подключить MetaMask кошелек. Перейдите в Профиль.');
+            return;
+        }
+
         const votingData = {
             title: document.getElementById('voteTitle').value,
             description: document.getElementById('voteDescription').value,
@@ -46,7 +52,8 @@ document.addEventListener('DOMContentLoaded', function() {
             end_date: new Date(document.getElementById('endDate').value).toISOString(),
             options: Array.from(document.querySelectorAll('.vote-option'))
                 .map(input => input.value)
-                .filter(text => text.trim() !== '')
+                .filter(text => text.trim() !== ''),
+            creator_address: userAddress // Добавляем адрес создателя
         };
 
         if (!validateVoting(votingData)) return;
@@ -62,10 +69,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (response.ok) {
                 const result = await response.json();
-
-                // Кешируем данные в localStorage
-                //localStorage.setItem(`voting_${result.voting_id}`, JSON.stringify(result));
-
                 alert(`Голосование создано! ID: ${result.voting_id}`);
                 closeModalHandler();
                 loadVotings();
