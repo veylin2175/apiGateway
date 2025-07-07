@@ -16,20 +16,19 @@
             <a href="/subscriptions" class="nav-link">Мои подписки</a>
         </nav>
     </div>
-    <a href="/profile.html" class="profile">Профиль</a>
+    <a href="/profile" class="profile">Профиль</a>
 </header>
 
 <main class="main-content">
     <div class="votings-list" id="votingsList">
-        <!-- Голосования будут загружены через JS -->
     </div>
 </main>
 
-<div class="create-button" id="createButton">+</div>
+<div class="create-button" id="createButton"><span class="plus-symbol">+</span></div>
 
 <div class="modal" id="createModal">
     <div class="modal-content">
-        <span class="close">&times;</span>
+        <span class="close create-close">&times;</span>
         <h2>Создать голосование</h2>
 
         <div class="form-group">
@@ -78,6 +77,29 @@
         <div class="form-actions">
             <button id="cancelCreate">Отменить</button>
             <button id="submitVoting">Создать</button>
+        </div>
+    </div>
+</div>
+
+<div id="votingDetailsModal" class="modal">
+    <div class="modal-content">
+        <span class="close details-close">&times;</span>
+        <h2 id="modalVotingTitle"></h2>
+        <p id="modalVotingDescription"></p>
+        <p><strong>Создатель:</strong> <span id="modalCreatorAddress"></span></p>
+        <p><strong>Дата окончания:</strong> <span id="modalEndDate"></span></p>
+        <p><strong>Статус:</strong> <span id="modalStatus"></span></p>
+        <p><strong>Проголосовавших:</strong> <span id="modalVotesCount"></span></p>
+
+        <h3>Варианты:</h3>
+        <div id="modalVotingOptions">
+        </div>
+
+        <div class="vote-actions" style="margin-top: 1rem;">
+            <button id="submitVoteButton" class="submit-button">Проголосовать</button>
+            <p id="voteMessage" style="color: green; margin-top: 0.5rem; display: none;"></p>
+            <p id="voteError" style="color: red; margin-top: 0.5rem; display: none;"></p>
+            <button id="closeDetailsModal" class="cancel-button" style="margin-left: 10px;">Закрыть</button>
         </div>
     </div>
 </div>

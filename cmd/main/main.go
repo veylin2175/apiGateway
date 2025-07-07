@@ -65,6 +65,13 @@ type UserVotingDetail struct {
 	UserVote       *int   `json:"user_vote,omitempty"` // Индекс варианта, за который проголосовал пользователь (null если не голосовал)
 }
 
+// VoteRequest структура для приема запроса на голосование
+type VoteRequest struct {
+	VotingID            string `json:"voting_id"`
+	UserAddress         string `json:"user_address"`
+	SelectedOptionIndex int    `json:"selected_option_index"`
+}
+
 const (
 	envLocal = "local"
 	envDev   = "dev"
@@ -102,6 +109,7 @@ func main() {
 	router.Get("/voting/{id}", GetVotingByID)
 	router.Get("/voting", GetAllVotings)
 	router.Post("/user-data", GetUserData) // Маршрут для получения данных пользователя
+	router.Post("/vote", SubmitVote)       // НОВЫЙ МАРШРУТ ДЛЯ ГОЛОСОВАНИЯ
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Address))
 
@@ -177,7 +185,6 @@ func CreateVoting(w http.ResponseWriter, r *http.Request) {
 	votings[newVoting.ID] = newVoting
 
 	// Update user activity for the creator
-	// Это место не нужно менять, так как оно корректно добавляет ID в CreatedVotings
 	creatorAddressLower := strings.ToLower(newVoting.CreatorAddress)
 	activity := userActivities[creatorAddressLower]
 	activity.CreatedVotings = append(activity.CreatedVotings, newVoting.ID)
@@ -253,8 +260,6 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 			CreatedVotings:      []string{},
 			ParticipatedVotings: make(map[string]int),
 		}
-		// Важно: если активности не было, то и созданных/участвующих голосований тоже нет.
-		// Но мы все равно хотим пройти по ВСЕМ голосованиям, чтобы найти созданные.
 	}
 
 	var userVotings []UserVotingDetail
@@ -263,6 +268,14 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	// Перебираем ВСЕ голосования, чтобы найти созданные текущим пользователем
 	for _, voting := range votings {
 		if strings.ToLower(voting.CreatorAddress) == userAddressLower {
+			// Проверяем, голосовал ли пользователь в этом (своем) голосовании
+			userVote := activity.ParticipatedVotings[voting.ID]
+			var userVotePtr *int
+			// Если голосовал, то присваиваем указатель на значение
+			if _, ok := activity.ParticipatedVotings[voting.ID]; ok {
+				userVotePtr = &userVote
+			}
+
 			userVotings = append(userVotings, UserVotingDetail{
 				ID:             voting.ID,
 				Title:          voting.Title,
@@ -270,7 +283,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 				IsPrivate:      voting.IsPrivate,
 				CreatorAddress: voting.CreatorAddress,
 				VotesCount:     voting.VotesCount,
-				UserVote:       nil, // Создатель обычно не голосует за своё
+				UserVote:       userVotePtr, // Передаем найденный вердикт или nil
 			})
 			seenVotingIDs[voting.ID] = true
 		}
@@ -278,7 +291,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 
 	// Добавляем голосования, в которых пользователь участвовал, если они еще не были добавлены
 	for votingID, userVoteIndex := range activity.ParticipatedVotings {
-		if !seenVotingIDs[votingID] { // Проверяем, не было ли уже добавлено это голосование (например, если пользователь создал и проголосовал)
+		if !seenVotingIDs[votingID] { // Проверяем, не было ли уже добавлено это голосование
 			voting, ok := votings[votingID]
 			if ok {
 				voteIndex := userVoteIndex // Need a pointer to int for JSON omitempty
@@ -289,7 +302,7 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 					IsPrivate:      voting.IsPrivate,
 					CreatorAddress: voting.CreatorAddress,
 					VotesCount:     voting.VotesCount,
-					UserVote:       &voteIndex,
+					UserVote:       &voteIndex, // Устанавливаем вердикт
 				})
 				seenVotingIDs[voting.ID] = true
 			}
@@ -299,15 +312,15 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 
 	// Обновляем CreatedVotingsCount на основе фактически найденных созданных голосований
 	createdCount := 0
-	for _, voting := range userVotings {
-		if strings.ToLower(voting.CreatorAddress) == userAddressLower {
+	for _, uv := range userVotings {
+		if strings.ToLower(uv.CreatorAddress) == userAddressLower {
 			createdCount++
 		}
 	}
 
 	response := UserDataResponse{
 		WalletAddress:            requestBody.UserAddress,
-		CreatedVotingsCount:      createdCount, // Обновлено
+		CreatedVotingsCount:      createdCount,
 		ParticipatedVotingsCount: len(activity.ParticipatedVotings),
 		Votings:                  userVotings,
 	}
@@ -318,6 +331,72 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 		slog.Error("Failed to encode response for GetUserData", sl.Err(err))
 		return
 	}
+}
+
+// SubmitVote обрабатывает запрос на голосование
+func SubmitVote(w http.ResponseWriter, r *http.Request) {
+	var req VoteRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		slog.Error("SubmitVote: Invalid request payload", sl.Err(err))
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	voting, ok := votings[req.VotingID]
+	if !ok {
+		http.Error(w, "Voting not found", http.StatusNotFound)
+		slog.Error("SubmitVote: Voting not found", slog.String("voting_id", req.VotingID))
+		return
+	}
+
+	// Проверяем, активно ли голосование
+	endDate, err := time.Parse(time.RFC3339, voting.EndDate)
+	if err != nil {
+		http.Error(w, "Invalid end date format for voting", http.StatusInternalServerError)
+		slog.Error("SubmitVote: Invalid end date format", sl.Err(err), slog.String("voting_id", req.VotingID))
+		return
+	}
+	if time.Now().After(endDate) {
+		http.Error(w, "Voting has already ended", http.StatusForbidden)
+		slog.Warn("SubmitVote: Voting has ended", slog.String("voting_id", req.VotingID))
+		return
+	}
+
+	// Проверяем валидность выбранной опции
+	if req.SelectedOptionIndex < 0 || req.SelectedOptionIndex >= len(voting.Options) {
+		http.Error(w, "Invalid option selected", http.StatusBadRequest)
+		slog.Warn("SubmitVote: Invalid option index", slog.Int("option_index", req.SelectedOptionIndex), slog.String("voting_id", req.VotingID))
+		return
+	}
+
+	userAddressLower := strings.ToLower(req.UserAddress)
+
+	// Проверяем, голосовал ли пользователь уже
+	activity := userActivities[userAddressLower]
+	if activity.ParticipatedVotings == nil {
+		activity.ParticipatedVotings = make(map[string]int)
+	}
+	if _, alreadyVoted := activity.ParticipatedVotings[req.VotingID]; alreadyVoted {
+		http.Error(w, "You have already voted in this poll", http.StatusConflict) // 409 Conflict
+		slog.Warn("SubmitVote: User already voted", slog.String("user_address", req.UserAddress), slog.String("voting_id", req.VotingID))
+		return
+	}
+
+	// Регистрируем голос
+	activity.ParticipatedVotings[req.VotingID] = req.SelectedOptionIndex
+	userActivities[userAddressLower] = activity // Обновляем в мапе
+
+	// Увеличиваем счетчик голосов для голосования
+	voting.VotesCount++
+	votings[req.VotingID] = voting // Обновляем в мапе
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Vote successfully recorded"})
+	slog.Info("Vote recorded", slog.String("voting_id", req.VotingID), slog.String("user_address", req.UserAddress), slog.Int("option_index", req.SelectedOptionIndex))
 }
 
 // For testing purposes, add some dummy data
@@ -332,6 +411,7 @@ func addDummyData() {
 	// Dummy user addresses (lowercase for consistency)
 	user1 := "0x1234567890abcdef1234567890abcdef12345678" // User A
 	user2 := "0x9876543210fedcba9876543210fedcba98765432" // User B
+	user3 := "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // User C (New user for fresh vote)
 
 	// Create some dummy votings
 	voting1 := Voting{
@@ -354,10 +434,15 @@ func addDummyData() {
 		MinVotes: 1, EndDate: time.Now().Add(72 * time.Hour).Format(time.RFC3339), Options: []string{"Чат", "Опросы", "Форум"},
 		CreatorAddress: user2, VotesCount: 0,
 	}
-	voting5 := Voting{ // Добавим ещё одно голосование от user1
+	voting5 := Voting{
 		ID: "5", Title: "Идея для следующего хакатона", Description: "На чем сфокусируемся?", IsPrivate: false,
 		MinVotes: 1, EndDate: time.Now().Add(96 * time.Hour).Format(time.RFC3339), Options: []string{"AI", "Web3", "IoT"},
 		CreatorAddress: user1, VotesCount: 1,
+	}
+	voting6 := Voting{ // Новое голосование для user3, чтобы он мог проголосовать
+		ID: "6", Title: "Любимый цвет", Description: "Какой ваш любимый цвет?", IsPrivate: false,
+		MinVotes: 1, EndDate: time.Now().Add(120 * time.Hour).Format(time.RFC3339), Options: []string{"Синий", "Зеленый", "Желтый", "Фиолетовый"},
+		CreatorAddress: user1, VotesCount: 0,
 	}
 
 	votings[voting1.ID] = voting1
@@ -365,15 +450,22 @@ func addDummyData() {
 	votings[voting3.ID] = voting3
 	votings[voting4.ID] = voting4
 	votings[voting5.ID] = voting5
+	votings[voting6.ID] = voting6
 
 	// Populate user activities (Ensure creator addresses are lowercase)
 	userActivities[strings.ToLower(user1)] = UserActivity{
-		CreatedVotings:      []string{"1", "2", "5"}, // Обновлено
-		ParticipatedVotings: map[string]int{"3": 0},  // User1 voted for option 0 in voting 3
+		CreatedVotings:      []string{"1", "2", "5", "6"}, // User1 также создал voting6
+		ParticipatedVotings: map[string]int{"3": 0},       // User1 voted for option 0 in voting 3
 	}
 
 	userActivities[strings.ToLower(user2)] = UserActivity{
 		CreatedVotings:      []string{"3", "4"},
 		ParticipatedVotings: map[string]int{"1": 1, "2": 0}, // User2 voted for option 1 in voting 1, and option 0 in voting 2
+	}
+
+	// Для user3 пока нет активности, чтобы он мог проголосовать
+	userActivities[strings.ToLower(user3)] = UserActivity{
+		CreatedVotings:      []string{},
+		ParticipatedVotings: make(map[string]int),
 	}
 }
