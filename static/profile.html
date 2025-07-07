@@ -17,7 +17,7 @@
         </nav>
     </div>
     <div class="profile-info-header" id="profileInfoHeader">
-        <div class="avatar"></div>
+        <div class="avatar">U</div>
         <span class="wallet-address"></span>
         <div class="voting-stats">
             <span class="created-votings-count">Создано: 0</span>
@@ -27,27 +27,37 @@
 </header>
 
 <main class="main-content">
-    <div id="authSection">
-        <h2>Подключите ваш MetaMask кошелек</h2>
-        <button id="connectMetamask" class="connect-button">Подключить MetaMask</button>
-        <p class="error-message" id="metamaskError" style="display:none; color: red;"></p>
-    </div>
+    <h1>Профиль пользователя</h1>
+    <div class="profile-section">
+        <div id="connectWallet">
+            <p>Для просмотра профиля подключите ваш MetaMask кошелек.</p>
+            <button class="connect-button">Подключить MetaMask</button>
+        </div>
+        <div id="profileInfo" style="display: none;">
+            <div class="profile-info-header">
+                <div>
+                    <div class="wallet-address">Адрес кошелька: <span id="userWalletAddress"></span></div>
+                    <div class="voting-stats">
+                        <span>Создано голосований: <strong id="createdVotingsCount">0</strong></span>
+                        <span>Участвовал в голосованиях: <strong id="participatedVotingsCount">0</strong></span>
+                    </div>
+                </div>
+            </div>
 
-    <div id="profileDetails" style="display:none;">
-        <h2>Мои голосования и активность</h2>
-        <div class="table-container">
-            <table class="votings-table">
-                <thead>
-                <tr>
-                    <th>Название голосования</th>
-                    <th>Количество проголосовавших</th>
-                    <th>Ваш вердикт</th>
-                    <th>Статус</th>
-                </tr>
-                </thead>
-                <tbody id="userVotingsTableBody">
-                </tbody>
-            </table>
+            <div class="table-container">
+                <table class="votings-table">
+                    <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Проголосовавших</th>
+                        <th>Дата начала</th> <th>Ваш вердикт</th>
+                        <th>Статус</th>
+                    </tr>
+                    </thead>
+                    <tbody id="userVotingsTableBody">
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </main>

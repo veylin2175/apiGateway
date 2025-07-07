@@ -8,6 +8,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const addOptionButton = document.getElementById('addOption');
     const optionsContainer = document.getElementById('optionsContainer');
 
+    // Новое поле для даты начала
+    const startDateInput = document.getElementById('startDate'); // <--- ДОБАВЛЕНО
+    const endDateInput = document.getElementById('endDate'); // Получаем и это поле
+
     // Элементы нового модального окна деталей голосования
     const votingDetailsModal = document.getElementById('votingDetailsModal');
     const detailsCloseButton = document.querySelector('.details-close');
@@ -16,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalVotingDescription = document.getElementById('modalVotingDescription');
     const modalCreatorAddress = document.getElementById('modalCreatorAddress');
     const modalEndDate = document.getElementById('modalEndDate');
+    const modalStartDate = document.getElementById('modalStartDate'); // <--- ДОБАВЛЕНО
     const modalStatus = document.getElementById('modalStatus');
     const modalVotesCount = document.getElementById('modalVotesCount');
     const modalVotingOptions = document.getElementById('modalVotingOptions');
@@ -23,9 +28,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const voteMessage = document.getElementById('voteMessage');
     const voteError = document.getElementById('voteError');
 
-    let currentVotingId = null; // Для отслеживания ID текущего открытого голосования
+    let currentVotingId = null;
 
-    // --- Функции для модального окна создания голосования (без изменений) ---
+    // --- Функции для модального окна создания голосования ---
     createButton.addEventListener('click', () => {
         createModal.style.display = 'block';
         resetCreateForm();
@@ -66,7 +71,18 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('voteDescription').value = '';
         document.querySelector('input[name="voteType"][value="public"]').checked = true;
         document.getElementById('minVotes').value = 1;
-        document.getElementById('endDate').value = '';
+        // Установка текущей даты и времени по умолчанию для startDate
+        const now = new Date();
+        // Форматируем для input type="datetime-local" (YYYY-MM-DDTHH:mm)
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const formattedNow = `${year}-${month}-${day}T${hours}:${minutes}`;
+        startDateInput.value = formattedNow; // <--- Установка значения по умолчанию
+
+        document.getElementById('endDate').value = ''; // Дата окончания остается пустой
         optionsContainer.innerHTML = `
             <input type="text" class="vote-option" placeholder="Вариант 1" maxlength="100">
             <input type="text" class="vote-option" placeholder="Вариант 2" maxlength="100">
@@ -88,14 +104,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
         }
+        if (!data.start_date) { // <--- Проверка наличия даты начала
+            alert('Пожалуйста, укажите дату начала голосования.');
+            return false;
+        }
         if (!data.end_date) {
             alert('Пожалуйста, укажите дату окончания голосования.');
             return false;
         }
-        const now = new Date();
+
+        const startDate = new Date(data.start_date); // <--- Используем дату начала
         const endDate = new Date(data.end_date);
-        if (endDate <= now) {
-            alert('Дата окончания голосования должна быть в будущем.');
+
+        if (endDate <= startDate) { // <--- Сравнение даты окончания с датой начала
+            alert('Дата окончания голосования должна быть позже даты начала.');
             return false;
         }
         if (data.min_votes <= 0) {
@@ -118,7 +140,8 @@ document.addEventListener('DOMContentLoaded', function() {
             description: document.getElementById('voteDescription').value,
             is_private: document.querySelector('input[name="voteType"]:checked').value === 'private',
             min_votes: parseInt(document.getElementById('minVotes').value),
-            end_date: new Date(document.getElementById('endDate').value).toISOString(),
+            start_date: new Date(startDateInput.value).toISOString(), // <--- ОТПРАВЛЯЕМ ДАТУ НАЧАЛА
+            end_date: new Date(endDateInput.value).toISOString(),     // <--- И ДАТУ ОКОНЧАНИЯ
             options: Array.from(document.querySelectorAll('#optionsContainer .vote-option'))
                 .map(input => input.value)
                 .filter(text => text.trim() !== ''),
@@ -178,25 +201,38 @@ document.addEventListener('DOMContentLoaded', function() {
         votings.forEach(voting => {
             const votingCard = document.createElement('div');
             votingCard.className = 'voting-card';
-            votingCard.dataset.votingId = voting.voting_id; // Сохраняем ID для открытия модала
+            votingCard.dataset.votingId = voting.voting_id;
 
             const now = new Date();
+            const startDate = new Date(voting.start_date); // <--- НОВАЯ ДАТА НАЧАЛА
             const endDate = new Date(voting.end_date);
-            const isFinished = now > endDate;
-            const statusClass = isFinished ? 'status-finished' : 'status-active';
-            const statusText = isFinished ? 'Закончено' : 'Активное';
+
+            let statusText = '';
+            let statusClass = '';
+            let canVote = false;
+
+            if (now < startDate) {
+                statusText = 'Предстоящее';
+                statusClass = 'status-upcoming'; // <--- НОВЫЙ КЛАСС ДЛЯ СТИЛЕЙ
+            } else if (now > endDate) {
+                statusText = 'Закончено';
+                statusClass = 'status-finished';
+            } else {
+                statusText = 'Активное';
+                statusClass = 'status-active';
+                canVote = true; // Можно голосовать только если активно
+            }
 
             votingCard.innerHTML = `
                 <h3>${voting.title}</h3>
                 <p>${voting.description}</p>
                 <div class="voting-meta">
-                    <span>Дата окончания: ${new Date(voting.end_date).toLocaleString()}</span>
+                    <span>Начало: ${new Date(voting.start_date).toLocaleString()}</span><br> <span>Окончание: ${new Date(voting.end_date).toLocaleString()}</span>
                     <span class="${statusClass}">${statusText}</span>
                 </div>
             `;
             votingsList.appendChild(votingCard);
 
-            // Добавляем слушатель клика на карточку
             votingCard.addEventListener('click', () => openVotingDetails(voting.voting_id));
         });
     }
@@ -204,7 +240,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Функция для открытия модального окна деталей голосования
     async function openVotingDetails(votingId) {
         currentVotingId = votingId;
-        voteMessage.style.display = 'none'; // Скрываем сообщения при открытии
+        voteMessage.style.display = 'none';
         voteError.style.display = 'none';
 
         try {
@@ -217,33 +253,38 @@ document.addEventListener('DOMContentLoaded', function() {
             modalVotingTitle.textContent = voting.title;
             modalVotingDescription.textContent = voting.description;
             modalCreatorAddress.textContent = voting.creator_address;
+            modalStartDate.textContent = new Date(voting.start_date).toLocaleString(); // <--- Отображаем дату начала
             modalEndDate.textContent = new Date(voting.end_date).toLocaleString();
-            modalVotesCount.textContent = voting.votes_count; // Обновляем количество проголосовавших
+            modalVotesCount.textContent = voting.votes_count;
 
             const now = new Date();
+            const startDate = new Date(voting.start_date); // <--- ДАТА НАЧАЛА
             const endDate = new Date(voting.end_date);
-            const isFinished = now > endDate;
-            modalStatus.textContent = isFinished ? 'Закончено' : 'Активное';
-            modalStatus.className = isFinished ? 'status-finished' : 'status-active';
+
+            let isFinished = now > endDate;
+            let isUpcoming = now < startDate; // <--- Проверка на предстоящее
+            let isActive = !isFinished && !isUpcoming; // <--- Проверка на активное
+
+            modalStatus.textContent = isUpcoming ? 'Предстоящее' : (isFinished ? 'Закончено' : 'Активное');
+            modalStatus.className = isUpcoming ? 'status-upcoming' : (isFinished ? 'status-finished' : 'status-active');
 
             modalVotingOptions.innerHTML = '';
             voting.options.forEach((option, index) => {
                 const optionDiv = document.createElement('div');
                 optionDiv.className = 'vote-option-item';
+                // Отключаем радио-кнопки и возможность выбора, если голосование неактивно
                 optionDiv.innerHTML = `
-                    <input type="radio" name="voteOption" value="${index}" id="option${index}" ${isFinished ? 'disabled' : ''}>
+                    <input type="radio" name="voteOption" value="${index}" id="option${index}" ${!isActive ? 'disabled' : ''}>
                     <label for="option${index}">${option}</label>
                 `;
                 modalVotingOptions.appendChild(optionDiv);
 
-                // Добавляем класс 'disabled' если голосование закончено
-                if (isFinished) {
+                if (!isActive) {
                     optionDiv.classList.add('disabled');
                 }
 
-                // Добавляем обработчик для стилизации выбранного пункта
                 optionDiv.addEventListener('click', () => {
-                    if (!isFinished) { // Только если голосование активно
+                    if (isActive) { // Только если голосование активно
                         document.querySelectorAll('.vote-option-item').forEach(item => item.classList.remove('selected'));
                         optionDiv.classList.add('selected');
                         optionDiv.querySelector('input[type="radio"]').checked = true;
@@ -251,9 +292,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             });
 
-            // Деактивируем кнопку голосования, если голосование закончено
-            submitVoteButton.disabled = isFinished;
-            if (isFinished) {
+            // Деактивируем кнопку голосования, если голосование неактивно
+            submitVoteButton.disabled = !isActive;
+            if (isUpcoming) {
+                submitVoteButton.textContent = 'Голосование ещё не началось';
+            } else if (isFinished) {
                 submitVoteButton.textContent = 'Голосование завершено';
             } else {
                 submitVoteButton.textContent = 'Проголосовать';
@@ -283,7 +326,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const userAddress = localStorage.getItem('userAddress');
         if (!userAddress) {
             alert('Для голосования необходимо подключить MetaMask кошелек. Перейдите в Профиль.');
-            votingDetailsModal.style.display = 'none'; // Закрываем модал, чтобы пользователь мог авторизоваться
+            votingDetailsModal.style.display = 'none';
             return;
         }
 
@@ -296,9 +339,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const voteIndex = parseInt(selectedOption.value);
-        const votingId = currentVotingId; // Получаем ID из глобальной переменной
+        const votingId = currentVotingId;
 
-        // Проверяем, не голосовал ли пользователь уже
         try {
             const userDataResponse = await fetch('/user-data', {
                 method: 'POST',
@@ -309,16 +351,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Failed to fetch user data for vote check.');
             }
             const userData = await userDataResponse.json();
-            const participatedVotings = userData.participated_votings || {}; // Ensure it's an object
+            const participatedVotings = userData.votings.filter(v => v.UserVote !== null).map(v => v.ID); // Получаем ID голосований, в которых пользователь уже проголосовал
 
-            // Проверяем, есть ли уже запись о голосовании пользователя для текущего votingId
-            // Обратите внимание: бэкенд возвращает voted_votings как Map[string]int
-            if (participatedVotings[votingId] !== undefined) {
-                // Если пользователь уже голосовал, показываем сообщение и отключаем кнопку
+            if (participatedVotings.includes(votingId)) {
                 voteError.textContent = 'Вы уже проголосовали в этом опросе.';
                 voteError.style.display = 'block';
                 voteMessage.style.display = 'none';
-                submitVoteButton.disabled = true; // Отключаем кнопку
+                submitVoteButton.disabled = true;
                 document.querySelectorAll('.vote-option-item input[type="radio"]').forEach(radio => radio.disabled = true);
                 return;
             }
@@ -331,9 +370,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
 
-        // Отправка голоса на бэкенд
         try {
-            const response = await fetch(`/vote`, { // Новый эндпоинт для голосования
+            const response = await fetch(`/vote`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -349,23 +387,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 voteMessage.textContent = 'Ваш голос учтен!';
                 voteMessage.style.display = 'block';
                 voteError.style.display = 'none';
-                submitVoteButton.disabled = true; // Отключаем кнопку после успешного голоса
-                // Деактивируем радио-кнопки
+                submitVoteButton.disabled = true;
                 document.querySelectorAll('.vote-option-item input[type="radio"]').forEach(radio => radio.disabled = true);
-                // Обновляем данные в модальном окне (например, VotesCount)
+
                 const currentVotesCount = parseInt(modalVotesCount.textContent);
                 modalVotesCount.textContent = currentVotesCount + 1;
-                // Обновляем список голосований на главной странице и в профиле
-                loadVotings();
-                // Если сейчас на странице профиля, то обновить ее тоже (через localStorage или window.location.reload())
-                if (window.location.pathname === '/profile' && typeof fetchUserData === 'function') {
-                    // Предполагаем, что fetchUserData доступна глобально или импортируется
-                    // Если нет, то можно просто перезагрузить страницу: window.location.reload();
-                    const storedAddress = localStorage.getItem('userAddress');
-                    if (storedAddress) {
-                        // Это вызов из profile.js, если он был загружен в scope
-                        // Если нет, это не сработает и нужно подумать, как обновить профиль
-                        // Для простоты можно просто перезагрузить страницу
+                loadVotings(); // Перезагружаем список голосований на главной
+
+                // Чтобы обновить профиль, если пользователь на странице профиля
+                if (window.location.pathname === '/profile') {
+                    // Используем функцию из profile.js, если она доступна в глобальной области видимости
+                    if (typeof fetchUserData === 'function') {
+                        const storedAddress = localStorage.getItem('userAddress');
+                        if (storedAddress) {
+                            fetchUserData(storedAddress); // Вызываем функцию из profile.js
+                        }
+                    } else {
+                        // Как запасной вариант, если fetchUserData не глобальна
                         window.location.reload();
                     }
                 }

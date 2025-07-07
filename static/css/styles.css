@@ -486,3 +486,19 @@ body {
     color: #dc3545; /* Red */
     font-weight: bold;
 }
+
+/* Status Badges */
+.status-active {
+    color: #28a745; /* Green */
+    font-weight: bold;
+}
+
+.status-finished {
+    color: #dc3545; /* Red */
+    font-weight: bold;
+}
+
+.status-upcoming { /* <-- ДОБАВЛЕНО */
+    color: #ffc107; /* Orange/Yellow */
+    font-weight: bold;
+}
