@@ -85,10 +85,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Загрузка списка голосований
     async function loadVotings() {
         try {
-            const response = await fetch('/voting');
+            const response = await fetch('/voting'); // Запрос без параметра 'type=all'
             if (response.ok) {
                 const votings = await response.json();
                 renderVotings(votings);
+            } else {
+                console.error('Failed to load votings:', response.status, response.statusText);
             }
         } catch (error) {
             console.error('Error loading votings:', error);
