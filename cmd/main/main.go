@@ -122,16 +122,6 @@ func setupPrettySlog() *slog.Logger {
 	return slog.New(h)
 }
 
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(payload)
-}
-
-func respondWithError(w http.ResponseWriter, code int, message string) {
-	respondWithJSON(w, code, map[string]string{"error": message})
-}
-
 func CreateVoting(w http.ResponseWriter, r *http.Request) {
 	var newVoting Voting
 	err := json.NewDecoder(r.Body).Decode(&newVoting)
@@ -145,9 +135,12 @@ func CreateVoting(w http.ResponseWriter, r *http.Request) {
 	votings[newVoting.ID] = newVoting
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	err = json.NewEncoder(w).Encode(map[string]string{
 		"voting_id": newVoting.ID,
 	})
+	if err != nil {
+		return
+	}
 }
 
 func GetVotingByID(w http.ResponseWriter, r *http.Request) {
@@ -160,15 +153,29 @@ func GetVotingByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(voting)
+	err := json.NewEncoder(w).Encode(voting)
+	if err != nil {
+		return
+	}
 }
 
 func GetAllVotings(w http.ResponseWriter, r *http.Request) {
-	all := []Voting{}
+	var filteredVotings []Voting
+	// Проверяем параметр запроса 'type'. Если его нет или он равен 'public', показываем только публичные.
+	// Если 'type=all', показываем все (для "Мои голосования" или админки, если таковая будет).
+	showAll := r.URL.Query().Get("type") == "all"
+
 	for _, v := range votings {
-		all = append(all, v)
+		if showAll || !v.IsPrivate {
+			filteredVotings = append(filteredVotings, v)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(all)
+	err := json.NewEncoder(w).Encode(filteredVotings)
+	if err != nil {
+		// Log the error
+		slog.Error("Failed to encode response for GetAllVotings", sl.Err(err))
+		return
+	}
 }
