@@ -5,7 +5,6 @@ import (
 	"apiGateway/internal/http-server/middleware/mwlogger"
 	"apiGateway/internal/lib/logger/handlers/slogpretty"
 	"apiGateway/internal/lib/logger/sl"
-	"apiGateway/internal/models"
 	"context"
 	"encoding/json"
 	"github.com/go-chi/chi"
@@ -14,10 +13,22 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
-	"time"
 )
+
+var votings = make(map[string]Voting)
+
+type Voting struct {
+	ID          string   `json:"voting_id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	IsPrivate   bool     `json:"is_private"`
+	MinVotes    int      `json:"min_votes"`
+	EndDate     string   `json:"end_date"`
+	Options     []string `json:"options"`
+}
 
 const (
 	envLocal = "local"
@@ -49,40 +60,9 @@ func main() {
 	})
 	router.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
-	// Обработчики для веб-интерфейса
-	router.Get("/voting", func(w http.ResponseWriter, r *http.Request) {
-		// Заглушка - в реальности будет запрос к БД
-		votings := []models.Voting{
-			{
-				ID:          "1",
-				Title:       "Тестовое голосование",
-				Description: "Это пример публичного голосования",
-				IsPrivate:   false,
-				EndDate:     time.Now().Add(24 * time.Hour),
-				VotingOptions: []models.VotingOptions{
-					{OptionID: 1, Text: "Вариант 1"},
-					{OptionID: 2, Text: "Вариант 2"},
-				},
-			},
-		}
-		respondWithJSON(w, http.StatusOK, votings)
-	})
-
-	router.Post("/voting", func(w http.ResponseWriter, r *http.Request) {
-		var newVoting models.Voting
-		if err := json.NewDecoder(r.Body).Decode(&newVoting); err != nil {
-			respondWithError(w, http.StatusBadRequest, "Invalid request payload")
-			return
-		}
-
-		// В реальности: сохранение в БД и блокчейн
-		newVoting.ID = "1" // Заглушка
-		newVoting.CreatedAt = time.Now()
-
-		respondWithJSON(w, http.StatusCreated, map[string]string{
-			"voting_id": newVoting.ID,
-		})
-	})
+	router.Post("/voting", CreateVoting)
+	router.Get("/voting/{id}", GetVotingByID)
+	router.Get("/voting", GetAllVotings)
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Address))
 
@@ -150,4 +130,45 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 
 func respondWithError(w http.ResponseWriter, code int, message string) {
 	respondWithJSON(w, code, map[string]string{"error": message})
+}
+
+func CreateVoting(w http.ResponseWriter, r *http.Request) {
+	var newVoting Voting
+	err := json.NewDecoder(r.Body).Decode(&newVoting)
+	if err != nil {
+		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	newVoting.ID = strconv.Itoa(len(votings) + 1) // simple ID
+
+	votings[newVoting.ID] = newVoting
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"voting_id": newVoting.ID,
+	})
+}
+
+func GetVotingByID(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	voting, ok := votings[id]
+	if !ok {
+		http.Error(w, "Voting not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(voting)
+}
+
+func GetAllVotings(w http.ResponseWriter, r *http.Request) {
+	all := []Voting{}
+	for _, v := range votings {
+		all = append(all, v)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(all)
 }
