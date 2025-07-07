@@ -62,10 +62,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (response.ok) {
                 const result = await response.json();
+
+                // Кешируем данные в localStorage
+                //localStorage.setItem(`voting_${result.voting_id}`, JSON.stringify(result));
+
                 alert(`Голосование создано! ID: ${result.voting_id}`);
                 closeModalHandler();
                 loadVotings();
-            } else {
+            }
+            else {
                 const errorText = await response.text();
                 console.error('Ошибка от сервера:', errorText);
                 alert('Ошибка при создании голосования: ' + errorText);
@@ -114,17 +119,25 @@ document.addEventListener('DOMContentLoaded', function() {
     loadVotings();
 });
 
-// Рендер списка голосований (заглушка)
+// Рендер списка голосований
 function renderVotings(votings) {
     const container = document.getElementById('votingsList');
-    container.innerHTML = votings.map(voting => `
-        <div class="voting-card">
+    container.innerHTML = '';
+
+    votings.forEach(voting => {
+        // Сохраняем в кеш (если вдруг пришло с сервера)
+        localStorage.setItem(`voting_${voting.id}`, JSON.stringify(voting));
+
+        const card = document.createElement('div');
+        card.className = 'voting-card';
+        card.innerHTML = `
             <h3 class="voting-title">${voting.title}</h3>
             <p class="voting-description">${voting.description || 'Нет описания'}</p>
             <div class="voting-meta">
-                <span>До ${new Date(voting.end_date).toLocaleDateString()}</span>
+                <span>До ${new Date(voting.end_date).toLocaleString()}</span>
                 <span>${voting.is_private ? '🔒 Приватное' : '🌍 Публичное'}</span>
             </div>
-        </div>
-    `).join('');
+        `;
+        container.appendChild(card);
+    });
 }
