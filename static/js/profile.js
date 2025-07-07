@@ -1,13 +1,20 @@
 document.addEventListener('DOMContentLoaded', function() {
     const connectWalletButton = document.getElementById('connectWallet');
     const profileInfo = document.getElementById('profileInfo');
-    const userWalletAddress = document.getElementById('userWalletAddress');
-    const createdVotingsCount = document.getElementById('createdVotingsCount');
-    const participatedVotingsCount = document.getElementById('participatedVotingsCount');
+    const userWalletAddress = document.getElementById('userWalletAddress'); // Это для основного блока профиля
+
+    // Добавляем элемент для адреса кошелька в хедере
+    const headerWalletAddressSpan = document.querySelector('#profileInfoHeader .wallet-address'); // <-- НОВОЕ: для хедер
+    const headerCreatedCountSpan = document.querySelector('#profileInfoHeader .created-votings-count'); // <-- НОВОЕ: для хедер
+    const headerParticipatedCountSpan = document.querySelector('#profileInfoHeader .participated-votings-count'); // <-- НОВОЕ: для хедер
+
+
+    const createdVotingsCount = document.getElementById('createdVotingsCount'); // Это для основного блока профиля
+    const participatedVotingsCount = document.getElementById('participatedVotingsCount'); // Это для основного блока профиля
     const userVotingsTableBody = document.getElementById('userVotingsTableBody');
 
     // Make fetchUserData globally accessible (optional, but convenient for app.js)
-    window.fetchUserData = fetchUserData; // <--- СДЕЛАЕМ ГЛОБАЛЬНО ДОСТУПНОЙ
+    window.fetchUserData = fetchUserData;
 
     connectWalletButton.addEventListener('click', async () => {
         if (typeof window.ethereum !== 'undefined') {
@@ -27,9 +34,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     const displayProfile = (address) => {
+        // Обновляем адрес в основном блоке профиля
         userWalletAddress.textContent = address;
         profileInfo.style.display = 'block';
         connectWalletButton.style.display = 'none';
+
+        // Обновляем адрес в хедере
+        if (headerWalletAddressSpan) {
+            headerWalletAddressSpan.textContent = address;
+        }
     };
 
     async function fetchUserData(userAddress) {
@@ -44,8 +57,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (response.ok) {
                 const userData = await response.json();
+
+                // Обновляем счетчики в основном блоке профиля
                 createdVotingsCount.textContent = userData.created_votings_count;
                 participatedVotingsCount.textContent = userData.participated_votings_count;
+
+                // Обновляем счетчики в хедере
+                if (headerCreatedCountSpan) {
+                    headerCreatedCountSpan.textContent = `Создано: ${userData.created_votings_count}`;
+                }
+                if (headerParticipatedCountSpan) {
+                    headerParticipatedCountSpan.textContent = `Проголосовал: ${userData.participated_votings_count}`;
+                }
+
                 renderUserVotingsTable(userData.votings);
             } else {
                 const errorText = await response.text();
@@ -58,19 +82,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Функция для рендеринга таблицы с голосованиями пользователя
     const renderUserVotingsTable = (votings) => {
-        userVotingsTableBody.innerHTML = ''; // Очищаем таблицу
+        userVotingsTableBody.innerHTML = '';
 
         if (!votings || votings.length === 0) {
-            userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Вы пока не создали или не участвовали в голосованиях.</td></tr>`; // colspan увеличено
+            userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Вы пока не создали или не участвовали в голосованиях.</td></tr>`;
             return;
         }
 
         votings.forEach(voting => {
             const row = document.createElement('tr');
             const now = new Date();
-            const startDate = new Date(voting.start_date); // <--- Дата начала
+            const startDate = new Date(voting.start_date);
             const endDate = new Date(voting.end_date);
 
             let statusText = '';
@@ -97,7 +120,8 @@ document.addEventListener('DOMContentLoaded', function() {
             row.innerHTML = `
                 <td>${voting.title}</td>
                 <td>${votesCount}</td>
-                <td>${new Date(voting.start_date).toLocaleString()}</td> <td>${userVerdictText}</td>
+                <td>${new Date(voting.start_date).toLocaleString()}</td>
+                <td>${userVerdictText}</td>
                 <td class="${statusClass}">${statusText}</td>
             `;
             userVotingsTableBody.appendChild(row);
