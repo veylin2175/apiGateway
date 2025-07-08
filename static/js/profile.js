@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
         votings.forEach(voting => {
             const row = document.createElement('tr');
 
-            let statusText = voting.status; // Используем статус из Go
+            let statusText = voting.status;
             let statusClass = '';
 
             switch (voting.status) {
@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     statusClass = 'status-finished';
                     break;
                 case 'Rejected':
-                    statusClass = 'status-rejected'; // Новый класс
+                    statusClass = 'status-rejected';
                     break;
                 default:
                     statusClass = 'status-unknown';
@@ -109,22 +109,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
             let userVerdictText = 'Не голосовал';
             if (voting.user_vote !== undefined && voting.user_vote !== null) {
-                // Предполагаем, что voting.user_vote - это индекс из Choices
-                // Нам нужно получить Title выбранной опции.
-                // Для этого нужно, чтобы UserVotingDetail передавал Choice.Title или саму структуру Choice
-                // Так как сейчас передается только индекс, просто отобразим индекс.
                 userVerdictText = `Вариант ${voting.user_vote + 1}`;
             }
 
             const votesCount = voting.votes_count || 0;
+            const votingType = voting.is_private ? 'Приватное' : 'Публичное';
 
             row.innerHTML = `
-                <td>${voting.title}</td>
-                <td>${votesCount}</td>
-                <td>${new Date(voting.start_date).toLocaleString()}</td>
-                <td>${userVerdictText}</td>
-                <td class="${statusClass}">${statusText}</td>
-            `;
+            <td>${voting.title}</td>
+            <td>${votesCount}</td>
+            <td>${votingType}</td>
+            <td>${userVerdictText}</td>
+            <td class="${statusClass}">${statusText}</td>
+        `;
             userVotingsTableBody.appendChild(row);
         });
     };
