@@ -1,19 +1,17 @@
 document.addEventListener('DOMContentLoaded', function() {
     const connectWalletButton = document.getElementById('connectWallet');
     const profileInfo = document.getElementById('profileInfo');
-    const userWalletAddress = document.getElementById('userWalletAddress'); // Это для основного блока профиля
+    const userWalletAddress = document.getElementById('userWalletAddress');
 
-    // Добавляем элемент для адреса кошелька в хедере
-    const headerWalletAddressSpan = document.querySelector('#profileInfoHeader .wallet-address'); // <-- НОВОЕ: для хедер
-    const headerCreatedCountSpan = document.querySelector('#profileInfoHeader .created-votings-count'); // <-- НОВОЕ: для хедер
-    const headerParticipatedCountSpan = document.querySelector('#profileInfoHeader .participated-votings-count'); // <-- НОВОЕ: для хедер
+    const headerWalletAddressSpan = document.querySelector('#profileInfoHeader .wallet-address');
+    const headerCreatedCountSpan = document.querySelector('#profileInfoHeader .created-votings-count');
+    const headerParticipatedCountSpan = document.querySelector('#profileInfoHeader .participated-votings-count');
 
-
-    const createdVotingsCount = document.getElementById('createdVotingsCount'); // Это для основного блока профиля
-    const participatedVotingsCount = document.getElementById('participatedVotingsCount'); // Это для основного блока профиля
+    const createdVotingsCount = document.getElementById('createdVotingsCount');
+    const participatedVotingsCount = document.getElementById('participatedVotingsCount');
     const userVotingsTableBody = document.getElementById('userVotingsTableBody');
 
-    // Make fetchUserData globally accessible (optional, but convenient for app.js)
+    // Make fetchUserData globally accessible for app.js
     window.fetchUserData = fetchUserData;
 
     connectWalletButton.addEventListener('click', async () => {
@@ -34,12 +32,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     const displayProfile = (address) => {
-        // Обновляем адрес в основном блоке профиля
         userWalletAddress.textContent = address;
         profileInfo.style.display = 'block';
         connectWalletButton.style.display = 'none';
 
-        // Обновляем адрес в хедере
         if (headerWalletAddressSpan) {
             headerWalletAddressSpan.textContent = address;
         }
@@ -58,11 +54,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (response.ok) {
                 const userData = await response.json();
 
-                // Обновляем счетчики в основном блоке профиля
                 createdVotingsCount.textContent = userData.created_votings_count;
                 participatedVotingsCount.textContent = userData.participated_votings_count;
 
-                // Обновляем счетчики в хедере
                 if (headerCreatedCountSpan) {
                     headerCreatedCountSpan.textContent = `Создано: ${userData.created_votings_count}`;
                 }
@@ -92,26 +86,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
         votings.forEach(voting => {
             const row = document.createElement('tr');
-            const now = new Date();
-            const startDate = new Date(voting.start_date);
-            const endDate = new Date(voting.end_date);
 
-            let statusText = '';
+            let statusText = voting.status; // Используем статус из Go
             let statusClass = '';
 
-            if (now < startDate) {
-                statusText = 'Предстоящее';
-                statusClass = 'status-upcoming';
-            } else if (now > endDate) {
-                statusText = 'Закончено';
-                statusClass = 'status-finished';
-            } else {
-                statusText = 'Активное';
-                statusClass = 'status-active';
+            switch (voting.status) {
+                case 'Upcoming':
+                    statusClass = 'status-upcoming';
+                    break;
+                case 'Active':
+                    statusClass = 'status-active';
+                    break;
+                case 'Finished':
+                    statusClass = 'status-finished';
+                    break;
+                case 'Rejected':
+                    statusClass = 'status-rejected'; // Новый класс
+                    break;
+                default:
+                    statusClass = 'status-unknown';
             }
 
             let userVerdictText = 'Не голосовал';
             if (voting.user_vote !== undefined && voting.user_vote !== null) {
+                // Предполагаем, что voting.user_vote - это индекс из Choices
+                // Нам нужно получить Title выбранной опции.
+                // Для этого нужно, чтобы UserVotingDetail передавал Choice.Title или саму структуру Choice
+                // Так как сейчас передается только индекс, просто отобразим индекс.
                 userVerdictText = `Вариант ${voting.user_vote + 1}`;
             }
 
@@ -128,10 +129,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     };
 
-    // Проверка статуса кошелька при загрузке страницы
+    // Исправление ошибки с голосованием после перезахода:
+    // При загрузке страницы, если адрес кошелька сохранен,
+    // сразу же пытаемся загрузить данные пользователя.
     const storedAddress = localStorage.getItem('userAddress');
     if (storedAddress) {
-        displayProfile(storedAddress);
-        fetchUserData(storedAddress);
+        displayProfile(storedAddress); // Обновить UI профиля
+        fetchUserData(storedAddress); // Загрузить данные с сервера
     }
 });

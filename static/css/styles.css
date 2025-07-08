@@ -507,3 +507,55 @@ body {
     color: #ffc107; /* Orange/Yellow */
     font-weight: bold;
 }
+
+/* Styles for Voting Statuses */
+.status-upcoming {
+    color: #007bff; /* Blue */
+    font-weight: bold;
+}
+
+.status-active {
+    color: #28a745; /* Green */
+    font-weight: bold;
+}
+
+.status-finished {
+    color: #6c757d; /* Gray */
+    font-weight: bold;
+}
+
+.status-rejected {
+    color: #dc3545; /* Red */
+    font-weight: bold;
+}
+
+/* Styles for Modal Winner/Rejected message */
+.modal-winner {
+    font-size: 1.2em;
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.modal-winner.status-finished {
+    background-color: #e0ffe0; /* Light green background for winner */
+    color: #28a745;
+    border: 1px solid #28a745;
+}
+
+.modal-winner.status-rejected {
+    background-color: #ffe0e0; /* Light red background for rejected */
+    color: #dc3545;
+    border: 1px solid #dc3545;
+}
+
+/* Make options disabled if not active */
+.vote-option-item.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.vote-option-item.disabled label {
+    cursor: not-allowed;
+}
