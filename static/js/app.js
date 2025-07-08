@@ -230,8 +230,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h3>${voting.title}</h3>
                 <p>${voting.description}</p>
                 <div class="voting-meta">
-                    <span>Начало: ${new Date(voting.start_date).toLocaleString()}</span><br>
-                    <span>Окончание: ${new Date(voting.end_date).toLocaleString()}</span>
+                    <span>Начало:<br>${new Date(voting.start_date).toLocaleString()}</span><br>
+                    <span>Окончание:<br>${new Date(voting.end_date).toLocaleString()}</span>
                     <span class="${statusClass}">${statusText}</span>
                 </div>
             `;

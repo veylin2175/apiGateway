@@ -1,40 +1,62 @@
 package models
 
-import "time"
-
-type Users struct {
-	UserID             string   `json:"user_id"`             // Адрес кошелька
-	CreatedVoting      []Voting `json:"create_voting"`       // Список всех созданных пользователем голосований
-	ParticipatedVoting []Voting `json:"participated_voting"` // Список голосований, в которых участвовал пользователь
-	SubscribedVoting   []Voting `json:"subscribed_voting"`   // (опционально) Подписки
+type UserActivity struct {
+	CreatedVotings      []string       `json:"created_votings"`
+	ParticipatedVotings map[string]int `json:"participated_votings"`
 }
 
-type Voting struct {
-	VotingID      string          `json:"voting_id"`      // ID голосования
-	Title         string          `json:"title"`          // Название
-	Description   string          `json:"description"`    // Описание
-	CreatorID     string          `json:"creator_id"`     // Адрес кошелька создателя голосования
-	IsPrivate     bool            `json:"is_private"`     // Приватное / публичное
-	MinVotes      int             `json:"min_votes"`      // Мин кол-во голосов
-	EndDate       time.Time       `json:"end_date"`       // Дата время окончания
-	CreatedAt     time.Time       `json:"created_at"`     // Дата создания / публикации
-	VotingOptions []VotingOptions `json:"voting_options"` // Список вариантов ответа
-	Votes         []Votes         `json:"votes"`          // Список проголосовавших
+type Choice struct {
+	Title      string `json:"title"`
+	CountVotes int64  `json:"countVotes"`
 }
 
-type VotingOptions struct {
-	VotingID string `json:"voting_id"` // ID голосования
-	OptionID int8   `json:"option_id"` // ID варианта ответа
-	Text     string `json:"text"`      // Текст варианта ответа
+type Voter struct {
+	Address string `json:"address"`
+	IsVoted bool   `json:"is_voted"`
+	Choice  int    `json:"choice_index"` // Изменено: храним индекс выбора
+	CanVote bool   `json:"can_vote"`     // Это поле может быть вычислено, но для контракта оставим
 }
 
-type Votes struct {
-	VotingID string `json:"voting_id"` // ID голосования
-	VoterID  string `json:"voter_id"`  // ID проголосовавшего
-	OptionID int8   `json:"option_id"` // ID варианта ответа
+type VoteSession struct {
+	ID              string           `json:"voting_id"`
+	CreatorAddr     string           `json:"creator_address"` // JSON-тег остался creator_address
+	Title           string           `json:"title"`
+	Description     string           `json:"description"`
+	StartTime       string           `json:"start_date"`  // JSON-тег остался start_date
+	EndTime         string           `json:"end_date"`    // JSON-тег остался end_date
+	MinNumberVotes  int64            `json:"min_votes"`   // JSON-тег остался min_votes
+	TempNumberVotes int64            `json:"votes_count"` // JSON-тег остался votes_count
+	IsPrivate       bool             `json:"is_private"`
+	Choices         []Choice         `json:"options"` // JSON-тег остался options
+	Voters          map[string]Voter `json:"voters"`
+	Winner          []string         `json:"winner"`
+	Status          string           `json:"status"` // "Upcoming", "Active", "Finished", "Rejected"
 }
 
-type Subscriptions struct { // Опционально
-	UserID   string `json:"user_id"`   // ID того, кто подписан
-	AuthorID string `json:"author_id"` // ID того, НА кого подписан
+// UserDataResponse структура ответа для получения данных пользователя
+type UserDataResponse struct {
+	WalletAddress            string             `json:"wallet_address"`
+	CreatedVotingsCount      int                `json:"created_votings_count"`
+	ParticipatedVotingsCount int                `json:"participated_votings_count"`
+	Votings                  []UserVotingDetail `json:"votings"`
+}
+
+// UserVotingDetail представляет одно голосование для профиля пользователя
+type UserVotingDetail struct {
+	ID             string `json:"voting_id"`
+	Title          string `json:"title"`
+	StartDate      string `json:"start_date"`
+	EndDate        string `json:"end_date"`
+	IsPrivate      bool   `json:"is_private"`
+	CreatorAddress string `json:"creator_address"`
+	VotesCount     int64  `json:"votes_count"`
+	UserVote       *int   `json:"user_vote,omitempty"`
+	Status         string `json:"status"` // Добавлено поле Status для UserVotingDetail
+}
+
+// VoteRequest структура для приема запроса на голосование
+type VoteRequest struct {
+	VotingID            string `json:"voting_id"`
+	UserAddress         string `json:"user_address"`
+	SelectedOptionIndex int    `json:"selected_option_index"`
 }
