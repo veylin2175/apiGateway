@@ -12,7 +12,7 @@ type Config struct {
 	Env        string     `yaml:"env" env-default:"local"`
 	HTTPServer HTTPServer `yaml:"http_server"`
 	Kafka      Kafka      `yaml:"kafka"`
-	//Blockchain Blockchain `yaml:"blockchain"`
+	Blockchain Blockchain `yaml:"blockchain"`
 }
 
 type HTTPServer struct {
@@ -30,7 +30,8 @@ type Kafka struct {
 }
 
 type Blockchain struct {
-	EthRpcUrl       string `yaml:"eth_rpc_url" env-required:"true"`
+	RpcUrl          string `yaml:"rpc_url" env-required:"true"`
+	WalletAddress   string `yaml:"wallet_address" env-required:"true"`
 	ContractAddress string `yaml:"contract_address" env-required:"true"`
 	PrivateKey      string `yaml:"private_key" env-required:"true"`
 }
