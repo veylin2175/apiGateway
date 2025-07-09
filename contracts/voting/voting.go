@@ -1,0 +1,37 @@
+package voting
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+)
+
+const (
+	votingABIFile = "C:/Users/Matvey/Singularity/apiGateway/contracts/voting/Voting.json"
+)
+
+type ContractABI struct {
+	ABI json.RawMessage `json:"abi"`
+}
+
+func GetVotingABI() (abi.ABI, error) {
+	absPath, err := filepath.Abs(votingABIFile)
+	if err != nil {
+		return abi.ABI{}, err
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return abi.ABI{}, err
+	}
+
+	var contractABI ContractABI
+	if err := json.Unmarshal(data, &contractABI); err != nil {
+		return abi.ABI{}, err
+	}
+
+	return abi.JSON(bytes.NewReader(contractABI.ABI))
+}

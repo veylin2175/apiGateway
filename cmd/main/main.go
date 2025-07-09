@@ -1,6 +1,7 @@
 package main
 
 import (
+	"apiGateway/internal/client"
 	"apiGateway/internal/config"
 	"apiGateway/internal/http-server/middleware/mwlogger"
 	"apiGateway/internal/lib/logger/handlers/slogpretty"
@@ -8,6 +9,7 @@ import (
 	"apiGateway/internal/models"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"log/slog"
@@ -94,6 +96,69 @@ func main() {
 			}
 		}
 	}()
+
+	votingClient, err := client.NewVotingClient(cfg, log)
+	if err != nil {
+		log.Error("Failed to create voting client: %v", err)
+	}
+	fmt.Println("\n--- Testing AddVoteSession ---")
+	/*testTitle := "Тестовое голосование из Go"
+	testDesc := "Это голосование создано из Go-бэкенда."
+	testStartTime := big.NewInt(time.Now().Unix())
+	testEndTime := big.NewInt(time.Now().Add(24 * time.Hour).Unix()) // Через 24 часа
+	testMinVotes := big.NewInt(1)
+	testIsPrivate := false
+	testVoters := []client.Voter{ // Пример одного голосующего
+		{Addr: votingClient.FromAddress, HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess},
+		{Addr: common.HexToAddress("0x70997970C51812dc3A0108C7934CDCc3FbF7b2cc"), HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess}, // Пример другого адреса из Hardhat
+	}
+	testChoices := []string{"Вариант A", "Вариант B", "Вариант C"}
+
+	txHash, err := votingClient.AddVoteSession(
+		testTitle,
+		testDesc,
+		testStartTime,
+		testEndTime,
+		testMinVotes,
+		testIsPrivate,
+		testVoters,
+		testChoices,
+	)
+	if err != nil {
+		log.Error("Failed to add vote session to blockchain", sl.Err(err))
+	} else {
+		log.Info("Vote session added to blockchain successfully", slog.String("tx_hash", txHash.Hex()))
+		// Вы можете дождаться подтверждения транзакции, если это необходимо
+		// bind.WaitMined(context.Background(), votingClient.client, tx)
+	}*/
+
+	// --- Пример вызова метода контракта на чтение (getVotingParticipatedByAddress) ---
+	// Ваш существующий код
+	fmt.Println("\n--- Testing GetVotingParticipatedByAddress ---")
+	address := cfg.Blockchain.WalletAddress
+	participated, err := votingClient.GetVotingParticipatedByAddress(address)
+	if err != nil {
+		log.Error("Failed to get participated votes", sl.Err(err))
+	} else {
+		if len(participated) == 0 {
+			log.Info("No participated votes found for this address")
+		} else {
+			log.Info(fmt.Sprintf("Found %d participated votes", len(participated)))
+			fmt.Println("Participated votes IDs:")
+			for _, id := range participated {
+				fmt.Println(id.String())
+			}
+		}
+	}
+
+	// --- Пример вызова новой view-функции (GetVotingCount) ---
+	fmt.Println("\n--- Testing GetVotingCount ---")
+	/*voteCount, err := votingClient.GetVotingCount()
+	if err != nil {
+		log.Error("Failed to get vote count", sl.Err(err))
+	} else {
+		log.Info(fmt.Sprintf("Total vote sessions on contract: %s", voteCount.String()))
+	}*/
 
 	if err := srv.ListenAndServe(); err != nil {
 		log.Error("failed to start server", sl.Err(err))
