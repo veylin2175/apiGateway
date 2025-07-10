@@ -561,3 +561,72 @@ body {
 .vote-option-item.disabled label {
     cursor: not-allowed;
 }
+
+.profile-info-header {
+    display: flex; /* Чтобы кнопка была рядом с информацией */
+    align-items: center;
+    justify-content: space-between; /* Распределить элементы по краям */
+    gap: 15px; /* Расстояние между элементами */
+    /* ... другие стили ... */
+}
+
+.disconnect-button {
+    padding: 8px 12px;
+    background-color: #dc3545; /* Красный цвет */
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    white-space: nowrap; /* Чтобы текст не переносился */
+}
+
+.disconnect-button:hover {
+    background-color: #c82333;
+}
+
+/* Стили для таблицы, если их нет */
+.table-container {
+    margin-top: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow-x: auto; /* Для прокрутки таблицы на маленьких экранах */
+}
+
+.votings-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.votings-table th,
+.votings-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.votings-table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+    color: #333;
+}
+
+.votings-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.votings-table tbody tr:hover {
+    background-color: #f1f1f1;
+}
+
+.no-votings {
+    text-align: center;
+    color: #666;
+    padding: 20px;
+}
+
+.status-upcoming { color: #ffc107; } /* Желтый */
+.status-active { color: #28a745; }   /* Зеленый */
+.status-finished { color: #6c757d; } /* Серый */
+.status-rejected { color: #dc3545; } /* Красный */
+.status-unknown { color: #007bff; }  /* Синий по умолчанию */

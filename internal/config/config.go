@@ -23,10 +23,8 @@ type HTTPServer struct {
 
 type Kafka struct {
 	Brokers         []string `yaml:"brokers" env-required:"true"`
-	Topic           string   `yaml:"topic" env-required:"true"`
 	GroupID         string   `yaml:"group_id" env-default:"voting-service"`
 	AutoOffsetReset string   `yaml:"auto_offset_reset" env-default:"earliest"`
-	MaxPollRecords  int      `yaml:"max_poll_records" env-default:"1"`
 }
 
 type Blockchain struct {
