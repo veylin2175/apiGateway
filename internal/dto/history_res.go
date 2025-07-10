@@ -1,12 +1,10 @@
 package dto
 
-// topic: vote-history-response
+// topic: vote-history-response -- отображение в профиле
 
 type History struct {
-	VotingID    string `json:"votingId"`
 	Title       string `json:"title"`
-	Description string `json:"description"`
-	CastAt      string `json:"castAt"`
-	OptionID    string `json:"optionId"`
+	VotersCount int    `json:"votersCount"`
+	IsPrivate   bool   `json:"private"`
 	OptionText  string `json:"optionText"`
 }

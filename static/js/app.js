@@ -379,8 +379,8 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const optionIdToSend = selectedOption.value;
-        const votingId = currentVotingId; // Use the stored ID
+        const selectedOptionIndex = parseInt(selectedOption.value); // <--- Преобразуем значение в число
+        const votingId = currentVotingId; // Используем сохраненный ID
 
         try {
             const response = await fetch(`/vote`, {
@@ -389,9 +389,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    voting_id: votingId,
-                    voter_id: userAddress,          // <--- ИЗМЕНЕНО: user_address -> voter_id
-                    option_id: optionIdToSend     // <--- ИЗМЕНЕНО: selected_option_index -> option_id,//     и берем id опции, а не индекс
+                    voting_id: votingId,            // <--- Изменено на 'voting_id'
+                    user_address: userAddress,      // <--- Изменено на 'user_address'
+                    selected_option_index: selectedOptionIndex // <--- Изменено на 'selected_option_index'
                 })
             });
 
