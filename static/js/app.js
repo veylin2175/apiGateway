@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const voteIndex = parseInt(selectedOption.value);
+        const optionIdToSend = selectedOption.value;
         const votingId = currentVotingId; // Use the stored ID
 
         try {
@@ -390,8 +390,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({
                     voting_id: votingId,
-                    user_address: userAddress,
-                    selected_option_index: voteIndex
+                    voter_id: userAddress,          // <--- ИЗМЕНЕНО: user_address -> voter_id
+                    option_id: optionIdToSend     // <--- ИЗМЕНЕНО: selected_option_index -> option_id,//     и берем id опции, а не индекс
                 })
             });
 
