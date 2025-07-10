@@ -4,6 +4,7 @@ import (
 	"apiGateway/internal/config"
 	"apiGateway/internal/dto"
 	"apiGateway/internal/http-server/middleware/mwlogger"
+	"apiGateway/internal/kafka/consumer"
 	"apiGateway/internal/kafka/producer"
 	"apiGateway/internal/lib/logger/handlers/slogpretty"
 	"apiGateway/internal/lib/logger/sl"
@@ -17,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,6 +39,8 @@ const (
 	envProd  = "prod"
 )
 
+func init() {}
+
 func main() {
 	cfg := config.MustLoad()
 
@@ -51,9 +53,13 @@ func main() {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	//kafkaConsumer := consumer.NewConsumer(cfg.Kafka, "voting-create")
+	allVotingConsumer := consumer.NewConsumer(cfg.Kafka, "all-votings-response", votings, log)
+	wg.Add(1)
+	go allVotingConsumer.RunAllVotingsMain(ctx, wg)
 
-	//go kafkaConsumer.Run(ctx, wg)
+	votingConsumer := consumer.NewConsumer(cfg.Kafka, "voting-response", votings, log)
+	wg.Add(1)
+	go votingConsumer.RunVotingByIdMain(ctx, wg)
 
 	kafkaProducer, err = producer.NewProducer(cfg.Kafka, log)
 	if err != nil {
@@ -95,7 +101,7 @@ func main() {
 	}
 
 	// Initialize some dummy data for testing
-	addDummyData()
+	//addDummyData() TODO: УБРАТЬ
 
 	// Горутина для регулярного обновления статусов голосований
 	go func() {
@@ -188,6 +194,7 @@ func main() {
 	log.Info("application stopping", slog.String("signal", sign.String()))
 	cancel()
 	wg.Wait()
+	log.Info("Kafka consumers stopped.")
 
 	log.Info("application stopped")
 }
@@ -363,12 +370,7 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Проверяем, началось ли голосование
-	startDate, err := time.Parse(time.RFC3339, voting.StartTime)
-	if err != nil {
-		http.Error(w, "Invalid start date format for voting", http.StatusInternalServerError)
-		slog.Error("SubmitVote: Invalid start date format", sl.Err(err), slog.String("voting_id", req.VotingID))
-		return
-	}
+	startDate := voting.StartTime
 	if time.Now().Before(startDate) {
 		http.Error(w, "VoteSession has not started yet", http.StatusForbidden)
 		slog.Warn("SubmitVote: VoteSession has not started", slog.String("voting_id", req.VotingID))
@@ -376,12 +378,7 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Проверяем, закончилось ли голосование
-	endDate, err := time.Parse(time.RFC3339, voting.EndTime)
-	if err != nil {
-		http.Error(w, "Invalid end date format for voting", http.StatusInternalServerError)
-		slog.Error("SubmitVote: Invalid end date format", sl.Err(err), slog.String("voting_id", req.VotingID))
-		return
-	}
+	endDate := voting.EndTime
 	if time.Now().After(endDate) {
 		http.Error(w, "VoteSession has already ended", http.StatusForbidden)
 		slog.Warn("SubmitVote: VoteSession has ended", slog.String("voting_id", req.VotingID))
@@ -442,11 +439,11 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	// --- ЛОГИКА ОТПРАВКИ В KAFKA (НОВАЯ) ---
 	// Нам нужен OptionID. Если Choice в models.VoteSession.Choices
 	// имеет поле ID, используем его. Если нет, генерируем, как раньше.
-	var optionIDToKafka int
+	var optionIDToKafka string
 	if req.SelectedOptionIndex >= 0 && req.SelectedOptionIndex < len(voting.Choices) {
 		// Предполагаем, что models.Choice имеет поле ID.
 		// Если нет, и OptionID хранится как `votingID_opt_index`, то генерируем:
-		// optionIDToKafka = fmt.Sprintf("%s_opt_%d", req.VotingID, req.SelectedOptionIndex)
+		optionIDToKafka = fmt.Sprintf("%s_opt_%d", req.VotingID, req.SelectedOptionIndex)
 		// Если Choice.ID существует:
 	} else {
 		slog.Error("SubmitVote: Internal error, invalid option index after checks",
@@ -473,7 +470,7 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 		slog.Info("Vote cast event sent to Kafka",
 			slog.String("voting_id", voteEvent.VotingID),
 			slog.String("voter_id", voteEvent.VoterID),
-			slog.Int("option_id", voteEvent.OptionID))
+			slog.String("option_id", voteEvent.OptionID))
 	}
 	// --- КОНЕЦ ЛОГИКИ ОТПРАВКИ В KAFKA ---
 
@@ -486,16 +483,16 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	slog.Info("Vote recorded", slog.String("voting_id", req.VotingID), slog.String("user_address", req.UserAddress), slog.Int("option_index", req.SelectedOptionIndex))
 }
 
-func CreateVoting(w http.ResponseWriter, r *http.Request) {
+/*func CreateVoting(w http.ResponseWriter, r *http.Request) {
 	var requestData struct {
-		Title          string   `json:"title"`
-		Description    string   `json:"description"`
-		IsPrivate      bool     `json:"is_private"`
-		MinNumberVotes int64    `json:"min_votes"`
-		StartTime      string   `json:"start_date"`
-		EndTime        string   `json:"end_date"`
-		Choices        []string `json:"options"` // Принимаем массив строк
-		CreatorAddress string   `json:"creator_address"`
+		Title          string    `json:"title"`
+		Description    string    `json:"description"`
+		IsPrivate      bool      `json:"is_private"`
+		MinNumberVotes int64     `json:"min_votes"`
+		StartTime      time.Time `json:"start_date"`
+		EndTime        time.Time `json:"end_date"`
+		Choices        []string  `json:"options"` // Принимаем массив строк
+		CreatorAddress string    `json:"creator_address"`
 	}
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err != nil {
@@ -507,13 +504,13 @@ func CreateVoting(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	// Валидация дат
-	startDate, err := time.Parse(time.RFC3339, requestData.StartTime)
+	startDate := requestData.StartTime
 	if err != nil {
 		http.Error(w, "Invalid start date format", http.StatusBadRequest)
 		slog.Error("CreateVoting: Invalid start date format", sl.Err(err))
 		return
 	}
-	endDate, err := time.Parse(time.RFC3339, requestData.EndTime)
+	endDate := requestData.EndTime
 	if err != nil {
 		http.Error(w, "Invalid end date format", http.StatusBadRequest)
 		slog.Error("CreateVoting: Invalid end date format", sl.Err(err))
@@ -562,7 +559,7 @@ func CreateVoting(w http.ResponseWriter, r *http.Request) {
 		slog.Error("Failed to encode response for CreateVoting", sl.Err(err))
 		return
 	}
-}
+}*/
 
 // GetVotingByID - ОБНОВЛЕНО для отправки запроса деталей голосования в Kafka
 func GetVotingByID(w http.ResponseWriter, r *http.Request) {
@@ -935,8 +932,8 @@ func UpdateVotingStatusAndWinner(votingID string) {
 	}
 
 	now := time.Now()
-	startDate, _ := time.Parse(time.RFC3339, voting.StartTime)
-	endDate, _ := time.Parse(time.RFC3339, voting.EndTime)
+	startDate := voting.StartTime
+	endDate := voting.EndTime
 
 	if now.Before(startDate) {
 		voting.Status = "Upcoming"
@@ -980,7 +977,7 @@ func UpdateAllVotingStatuses() {
 }
 
 // For testing purposes, add some dummy data
-func addDummyData() {
+/*func addDummyData() {
 	votings = make(map[string]models.VoteSession)
 	userActivities = make(map[string]models.UserActivity)
 
@@ -1121,4 +1118,4 @@ func addDummyData() {
 		CreatedVotings:      []string{},
 		ParticipatedVotings: map[string]int{"1": 0, "3": 1}, // User3 voted in 1 and 3
 	}
-}
+}*/

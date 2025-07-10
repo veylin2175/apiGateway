@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type UserActivity struct {
 	CreatedVotings      []string       `json:"created_votings"`
 	ParticipatedVotings map[string]int `json:"participated_votings"`
@@ -22,8 +24,8 @@ type VoteSession struct {
 	CreatorAddr     string           `json:"creator_address"` // JSON-тег остался creator_address
 	Title           string           `json:"title"`
 	Description     string           `json:"description"`
-	StartTime       string           `json:"start_date"`  // JSON-тег остался start_date
-	EndTime         string           `json:"end_date"`    // JSON-тег остался end_date
+	StartTime       time.Time        `json:"start_date"`  // JSON-тег остался start_date
+	EndTime         time.Time        `json:"end_date"`    // JSON-тег остался end_date
 	MinNumberVotes  int64            `json:"min_votes"`   // JSON-тег остался min_votes
 	TempNumberVotes int64            `json:"votes_count"` // JSON-тег остался votes_count
 	IsPrivate       bool             `json:"is_private"`

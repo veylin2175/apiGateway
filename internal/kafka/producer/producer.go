@@ -222,7 +222,7 @@ func (p *Producer) VoteCastProduce(ctx context.Context, voteData dto.VoteCast) e
 		p.log.Error("Failed to marshal VoteCast",
 			slog.String("voting_id", voteData.VotingID),
 			slog.String("voter_id", voteData.VoterID),
-			slog.Int("option_id", voteData.OptionID),
+			slog.String("option_id", voteData.OptionID),
 			slog.Any("error", err))
 		return fmt.Errorf("failed to marshal vote cast data: %w", err)
 	}
