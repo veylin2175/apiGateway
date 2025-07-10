@@ -40,22 +40,26 @@
                         <span>Участвовал в голосованиях: <strong id="participatedVotingsCount">0</strong></span>
                     </div>
                 </div>
-                <button class="disconnect-button" id="disconnectWalletButton">Выйти из аккаунта</button> </div>
+                <button class="disconnect-button" id="disconnectWalletButton">Выйти из аккаунта</button>
+            </div>
 
-            <div class="table-container">
-                <table class="votings-table">
-                    <thead>
-                    <tr>
-                        <th>Название</th>
-                        <th>Кол-во проголосовавших</th>
-                        <th>Тип голосования</th>
-                        <th>Ваш голос</th>
-                        <th>Статус</th>
-                    </tr>
-                    </thead>
-                    <tbody id="userVotingsTableBody">
-                    </tbody>
-                </table>
+            <div class="history-section">
+                <h2>Ваша история голосований</h2>
+                <div class="table-container">
+                    <table class="votings-table history-table">
+                        <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Проголосовало участников</th>
+                            <th>Приватное</th>
+                            <th>Ваш выбор</th>
+                        </tr>
+                        </thead>
+                        <tbody id="profileHistoryTableBody">
+                        <tr><td colspan="4" class="no-votings">История загружается...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

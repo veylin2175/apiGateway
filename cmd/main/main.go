@@ -50,6 +50,7 @@ func main() {
 	log.Debug("Debug messages are enabled")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	rwmu := &sync.RWMutex{}
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
@@ -60,6 +61,10 @@ func main() {
 	votingConsumer := consumer.NewConsumer(cfg.Kafka, "voting-response", votings, log)
 	wg.Add(1)
 	go votingConsumer.RunVotingByIdMain(ctx, wg)
+
+	historyConsumer := consumer.NewConsumer(cfg.Kafka, "vote-history-response", votings, log)
+	wg.Add(1)
+	go historyConsumer.RunVoteHistoryConsumer(ctx, wg)
 
 	kafkaProducer, err = producer.NewProducer(cfg.Kafka, log)
 	if err != nil {
@@ -85,7 +90,7 @@ func main() {
 	//router.Post("/voting", CreateVoting)
 	router.Get("/voting/{id}", GetVotingByID)
 	router.Get("/voting", GetAllVotings)
-	router.Post("/user-data", GetUserData)
+	router.Post("/user-data", GetUserData(log, historyConsumer, kafkaProducer, userActivities, votings, rwmu))
 	router.Post("/vote", SubmitVote)
 	router.Post("/connect-wallet", ConnectWalletHandler)
 	router.Post("/voting", CreateVotingHandler)
@@ -99,9 +104,6 @@ func main() {
 		WriteTimeout: cfg.HTTPServer.Timeout,
 		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
 	}
-
-	// Initialize some dummy data for testing
-	//addDummyData() TODO: УБРАТЬ
 
 	// Горутина для регулярного обновления статусов голосований
 	go func() {
@@ -345,7 +347,10 @@ func CreateVotingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(responseBody)
+	err = json.NewEncoder(w).Encode(responseBody)
+	if err != nil {
+		return
+	}
 }
 
 // SubmitVote - хендлер для обработки голосования пользователя
@@ -645,7 +650,111 @@ func GetAllVotings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetUserData(w http.ResponseWriter, r *http.Request) {
+// GetUserData теперь является функцией, которая возвращает http.HandlerFunc.
+// Она принимает все необходимые зависимости как аргументы.
+func GetUserData(
+	log *slog.Logger,
+	consumerInstance *consumer.Consumer, // Экземпляр Consumer
+	kafkaProducer *producer.Producer, // Экземпляр Producer
+	userActivities map[string]models.UserActivity, // Глобальная мапа userActivities
+	votings map[string]models.VoteSession, // Глобальная мапа votings
+	mu *sync.RWMutex, // Глобальный мьютекс для votings и userActivities
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var requestPayload struct {
+			UserAddress string `json:"user_address"`
+		}
+
+		err := json.NewDecoder(r.Body).Decode(&requestPayload)
+		if err != nil {
+			log.Error("GetUserData: Failed to decode user data request", sl.Err(err))
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+
+		userAddress := requestPayload.UserAddress
+		if userAddress == "" {
+			log.Warn("GetUserData: Received empty user address")
+			http.Error(w, "User address is required", http.StatusBadRequest)
+			return
+		}
+
+		log.Info("Received request for user data", slog.String("user_address", userAddress))
+
+		// --- ОТПРАВКА ЗАПРОСА ИСТОРИИ ГОЛОСОВАНИЙ В KAFKA (fire-and-forget) ---
+		// Это инициирует Java-сервис отправить историю в топик `vote-history-response`,
+		// которую консьюмер Go-сервиса сохранит в consumerInstance.UserProfilesHistory.
+		err = kafkaProducer.VoteHistoryRequestProduce(r.Context(), userAddress)
+		if err != nil {
+			log.Error("Failed to send vote history request to Kafka", sl.Err(err), slog.String("user_address", userAddress))
+			// Продолжаем выполнять запрос, даже если триггер не сработал.
+		} else {
+			log.Info("Vote history request sent to Kafka for user", slog.String("user_address", userAddress))
+		}
+		// --- КОНЕЦ БЛОКА ОТПРАВКИ ТРИГГЕРА ---
+
+		// --- ВАША СУЩЕСТВУЮЩАЯ ЛОГИКА ПОЛУЧЕНИЯ ДАННЫХ ПОЛЬЗОВАТЕЛЯ ---
+		mu.Lock()
+		defer mu.Unlock()
+
+		activity, activityExists := userActivities[strings.ToLower(userAddress)]
+		if !activityExists {
+			activity = models.UserActivity{
+				CreatedVotings:      []string{},
+				ParticipatedVotings: make(map[string]int),
+			}
+		}
+
+		createdCount := 0
+		participatedCount := len(activity.ParticipatedVotings)
+
+		userVotings := []models.VoteSession{}
+		for _, voting := range votings {
+			if strings.EqualFold(voting.CreatorAddr, userAddress) {
+				createdCount++
+				userVotings = append(userVotings, voting)
+			} else if _, ok := activity.ParticipatedVotings[voting.ID]; ok {
+				userVotings = append(userVotings, voting)
+			}
+		}
+
+		// --- ПОЛУЧАЕМ ИСТОРИЮ ИЗ ПАМЯТИ ---
+		consumerInstance.Mu.Lock() // Блокируем consumerInstance.UserProfilesHistory
+		historyData, found := consumerInstance.UserProfilesHistory[userAddress]
+		if !found {
+			historyData = []dto.History{} // Если истории нет, возвращаем пустой слайс
+			log.Info("GetUserData: No history found in memory for user", slog.String("user_address", userAddress))
+		}
+		consumerInstance.Mu.Unlock()
+
+		// --- ФОРМИРУЕМ ОТВЕТ ДЛЯ ФРОНТЕНДА ---
+		type UserProfileResponse struct {
+			UserAddress              string               `json:"user_address"`
+			CreatedVotingsCount      int                  `json:"created_votings_count"`
+			ParticipatedVotingsCount int                  `json:"participated_votings_count"`
+			Votings                  []models.VoteSession `json:"votings"`
+			History                  []dto.History        `json:"history"` // Добавляем историю из памяти
+		}
+
+		responsePayload := UserProfileResponse{
+			UserAddress:              requestPayload.UserAddress,
+			CreatedVotingsCount:      createdCount,
+			ParticipatedVotingsCount: participatedCount,
+			Votings:                  userVotings,
+			History:                  historyData, // <-- Прямое использование данных из памяти
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		err = json.NewEncoder(w).Encode(responsePayload)
+		if err != nil {
+			log.Error("GetUserData: Failed to encode responsePayload", sl.Err(err))
+			return
+		}
+	}
+}
+
+/*func GetUserData(w http.ResponseWriter, r *http.Request) {
 	var requestPayload struct {
 		UserAddress string `json:"user_address"`
 	}
@@ -718,8 +827,11 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(responsePayload)
-}
+	err = json.NewEncoder(w).Encode(responsePayload)
+	if err != nil {
+		return
+	}
+}*/
 
 /*func GetUserData(w http.ResponseWriter, r *http.Request) {
 	var requestBody struct {
@@ -820,7 +932,6 @@ func GetUserData(w http.ResponseWriter, r *http.Request) {
 	}
 }*/
 
-// SubmitVote обрабатывает запрос на голосование
 /*func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	var req models.VoteRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -975,147 +1086,3 @@ func UpdateAllVotingStatuses() {
 	}
 	slog.Debug("All voting statuses updated.")
 }
-
-// For testing purposes, add some dummy data
-/*func addDummyData() {
-	votings = make(map[string]models.VoteSession)
-	userActivities = make(map[string]models.UserActivity)
-
-	user1 := "0x1234567890abcdef1234567890abcdef12345678"
-	user2 := "0x9876543210fedcba9876543210fedcba98765432"
-	user3 := "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-	now := time.Now()
-	futureStartDate := now.Add(48 * time.Hour)
-	pastEndDate := now.Add(-1 * time.Hour)
-	activeStartDate := now.Add(-24 * time.Hour)
-
-	// Helper to create Choice slice
-	createChoices := func(titles []string) []models.Choice {
-		c := make([]models.Choice, len(titles))
-		for i, t := range titles {
-			c[i] = models.Choice{Title: t, CountVotes: 0}
-		}
-		return c
-	}
-
-	// Helper to create Voters map
-	createVoters := func(votes map[string]int, votingChoices []models.Choice) map[string]models.Voter {
-		votersMap := make(map[string]models.Voter)
-		for addr, choiceIdx := range votes {
-			votersMap[strings.ToLower(addr)] = models.Voter{
-				Address: addr,
-				IsVoted: true,
-				Choice:  choiceIdx,
-				CanVote: true,
-			}
-			if choiceIdx >= 0 && choiceIdx < len(votingChoices) {
-				// Increment count here for dummy data
-				votingChoices[choiceIdx].CountVotes++
-			}
-		}
-		return votersMap
-	}
-
-	// Voting 1: Active, with votes
-	choices1 := createChoices([]string{"Синий", "Зеленый", "Красный"})
-	voters1 := createVoters(map[string]int{
-		user1: 0,
-		user2: 1,
-		user3: 0,
-		"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 2,
-		"0xcccccccccccccccccccccccccccccccccccccccc": 0,
-	}, choices1)
-	voting1 := models.VoteSession{
-		ID: "1", Title: "Выбор цвета логотипа", Description: "Голосуем за основной цвет нашего нового логотипа.", IsPrivate: false,
-		MinNumberVotes: 1, StartTime: activeStartDate.Format(time.RFC3339), EndTime: now.Add(24 * time.Hour).Format(time.RFC3339), Choices: choices1,
-		CreatorAddr: user1, TempNumberVotes: int64(len(voters1)), Voters: voters1, Winner: []string{}, Status: "Active",
-	}
-
-	// Voting 2: Private, Active
-	choices2 := createChoices([]string{"Да", "Нет"})
-	voters2 := createVoters(map[string]int{
-		user1: 0,
-		user2: 1,
-	}, choices2)
-	voting2 := models.VoteSession{
-		ID: "2", Title: "Приватное голосование команды A", Description: "Решение по внутреннему проекту.", IsPrivate: true,
-		MinNumberVotes: 3, StartTime: activeStartDate.Format(time.RFC3339), EndTime: now.Add(48 * time.Hour).Format(time.RFC3339), Choices: choices2,
-		CreatorAddr: user1, TempNumberVotes: int64(len(voters2)), Voters: voters2, Winner: []string{}, Status: "Active",
-	}
-
-	// Voting 3: Finished, has winner
-	choices3 := createChoices([]string{"Понедельник", "Среда", "Пятница"})
-	voters3 := createVoters(map[string]int{
-		user1: 0,
-		user2: 1,
-		user3: 1,
-		"0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": 1,
-		"0xffffffffffffffffffffffffffffffffffffffff": 2,
-		"0xdddddddddddddddddddddddddddddddddddddddd": 0,
-		"0xgggggggggggggggggggggggggggggggggggggggg": 1,
-		"0xhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh": 2,
-	}, choices3)
-	voting3 := models.VoteSession{
-		ID: "3", Title: "Когда провести митинг?", Description: "Выбираем удобное время для еженедельного митинга.", IsPrivate: false,
-		MinNumberVotes: 1, StartTime: now.Add(-72 * time.Hour).Format(time.RFC3339), EndTime: pastEndDate.Format(time.RFC3339), Choices: choices3,
-		CreatorAddr: user2, TempNumberVotes: int64(len(voters3)), Voters: voters3, Winner: []string{}, Status: "Finished", // Status will be updated by goroutine
-	}
-
-	// Voting 4: Upcoming
-	choices4 := createChoices([]string{"Чат", "Опросы", "Форум"})
-	voting4 := models.VoteSession{
-		ID: "4", Title: "Будущий функционал", Description: "Какую функцию добавить следующей?", IsPrivate: false,
-		MinNumberVotes: 1, StartTime: futureStartDate.Format(time.RFC3339), EndTime: futureStartDate.Add(72 * time.Hour).Format(time.RFC3339), Choices: choices4,
-		CreatorAddr: user2, TempNumberVotes: 0, Voters: make(map[string]models.Voter), Winner: []string{}, Status: "Upcoming",
-	}
-
-	// Voting 5: Active, low votes (will be Rejected after end)
-	choices5 := createChoices([]string{"AI", "Web3", "IoT"})
-	voters5 := createVoters(map[string]int{
-		user1: 0,
-	}, choices5)
-	voting5 := models.VoteSession{
-		ID: "5", Title: "Идея для следующего хакатона", Description: "На чем сфокусируемся?", IsPrivate: false,
-		MinNumberVotes: 5, StartTime: activeStartDate.Format(time.RFC3339), EndTime: now.Add(96 * time.Hour).Format(time.RFC3339), Choices: choices5,
-		CreatorAddr: user1, TempNumberVotes: int64(len(voters5)), Voters: voters5, Winner: []string{}, Status: "Active",
-	}
-
-	// Voting 6: Active, multiple winners possible
-	choices6 := createChoices([]string{"Синий", "Зеленый", "Желтый", "Фиолетовый"})
-	voters6 := createVoters(map[string]int{
-		"0xaaa": 0, "0xbbb": 0,
-		"0xccc": 1, "0xddd": 1,
-		"0xeee": 2,
-	}, choices6)
-	voting6 := models.VoteSession{
-		ID: "6", Title: "Любимый цвет", Description: "Какой ваш любимый цвет?", IsPrivate: false,
-		MinNumberVotes: 1, StartTime: activeStartDate.Format(time.RFC3339), EndTime: now.Add(120 * time.Hour).Format(time.RFC3339), Choices: choices6,
-		CreatorAddr: user1, TempNumberVotes: int64(len(voters6)), Voters: voters6, Winner: []string{}, Status: "Active",
-	}
-
-	votings[voting1.ID] = voting1
-	votings[voting2.ID] = voting2
-	votings[voting3.ID] = voting3
-	votings[voting4.ID] = voting4
-	votings[voting5.ID] = voting5
-	votings[voting6.ID] = voting6
-
-	// Update initial statuses and winners for dummy data
-	UpdateAllVotingStatuses()
-
-	userActivities[strings.ToLower(user1)] = models.UserActivity{
-		CreatedVotings:      []string{"1", "2", "5", "6"},
-		ParticipatedVotings: map[string]int{"3": 0, "1": 0}, // User1 voted in 3 and 1
-	}
-
-	userActivities[strings.ToLower(user2)] = models.UserActivity{
-		CreatedVotings:      []string{"3", "4"},
-		ParticipatedVotings: map[string]int{"1": 1, "2": 0}, // User2 voted in 1 and 2
-	}
-
-	userActivities[strings.ToLower(user3)] = models.UserActivity{
-		CreatedVotings:      []string{},
-		ParticipatedVotings: map[string]int{"1": 0, "3": 1}, // User3 voted in 1 and 3
-	}
-}*/

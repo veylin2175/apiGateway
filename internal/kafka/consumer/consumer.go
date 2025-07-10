@@ -15,10 +15,11 @@ import (
 // Consumer инкапсулирует Kafka reader и хранилище данных.
 type Consumer struct {
 	reader              *kafka.Reader
-	mu                  *sync.RWMutex
+	Mu                  *sync.RWMutex
 	CurrentVotings      map[string]models.VoteSession // Изменил тип на models.VoteSession, как в main
 	Log                 *slog.Logger                  // Добавляем логгер
 	votingResponseChans map[string]chan models.VoteSession
+	UserProfilesHistory map[string][]dto.History
 }
 
 // NewConsumer создает новый консюмер Kafka.
@@ -35,9 +36,11 @@ func NewConsumer(cfg config.Kafka, topic string, currentVotings map[string]model
 				Timeout: 10 * time.Second,
 			},
 		}),
-		mu:             &sync.RWMutex{},
-		CurrentVotings: currentVotings, // Получаем ссылку на общую map из main
-		Log:            logger,
+		Mu:                  &sync.RWMutex{},
+		CurrentVotings:      currentVotings, // Получаем ссылку на общую map из main
+		Log:                 logger,
+		votingResponseChans: make(map[string]chan models.VoteSession),
+		UserProfilesHistory: make(map[string][]dto.History),
 	}
 }
 
@@ -88,7 +91,7 @@ func (c *Consumer) RunAllVotingsMain(ctx context.Context, wg *sync.WaitGroup) {
 
 			c.Log.Info("Successfully consumed all votings list", slog.Int("count", len(receivedVotings)))
 
-			c.mu.Lock()
+			c.Mu.Lock()
 			for k := range c.CurrentVotings {
 				delete(c.CurrentVotings, k)
 			}
@@ -115,13 +118,13 @@ func (c *Consumer) RunAllVotingsMain(ctx context.Context, wg *sync.WaitGroup) {
 				}
 				c.CurrentVotings[newVoting.ID] = newVoting
 			}
-			c.mu.Unlock()
+			c.Mu.Unlock()
 			c.Log.Info("Global votings map updated from Kafka", slog.Int("new_count", len(c.CurrentVotings)))
 		}
 	}
 } // РАБОТАЕТ
 
-// --- НОВЫЙ КОНСЮМЕР ДЛЯ ОДНОГО ГОЛОСОВАНИЯ (обновлен) ---
+// --- НОВЫЙ КОНСЮМЕР ДЛЯ ОДНОГО ГОЛОСОВАНИЯ ---
 func (c *Consumer) RunVotingByIdMain(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	c.Log.Info("Starting Kafka consumer for voting-response", slog.String("topic", c.reader.Config().Topic), slog.String("group_id", c.reader.Config().GroupID))
@@ -218,7 +221,7 @@ func (c *Consumer) RunVotingByIdMain(ctx context.Context, wg *sync.WaitGroup) {
 				})
 			}
 
-			c.mu.Lock()
+			c.Mu.Lock()
 			currentVoting, exists := c.CurrentVotings[votingID]
 			if !exists {
 				c.Log.Debug("Creating new VoteSession entry for received single voting response", slog.String("voting_id", votingID))
@@ -246,10 +249,10 @@ func (c *Consumer) RunVotingByIdMain(ctx context.Context, wg *sync.WaitGroup) {
 			// Если эти поля уже были установлены ранее, они останутся без изменений.
 
 			c.CurrentVotings[votingID] = currentVoting
-			c.mu.Unlock()
+			c.Mu.Unlock()
 			c.Log.Info("Global votings map updated from Kafka with single voting data", slog.String("voting_id", votingID))
 
-			c.mu.Lock()                                        // Блокируем мьютекс для votingResponseChans
+			c.Mu.Lock()                                        // Блокируем мьютекс для votingResponseChans
 			respChan, found := c.votingResponseChans[votingID] // Ищем канал по votingID
 			if found {
 				select {
@@ -262,7 +265,91 @@ func (c *Consumer) RunVotingByIdMain(ctx context.Context, wg *sync.WaitGroup) {
 			} else {
 				c.Log.Debug("No active response channel found for voting ID. Data updated in map only.", slog.String("voting_id", votingID))
 			}
-			c.mu.Unlock() // Отпускаем мьютекс responseMu
+			c.Mu.Unlock() // Отпускаем мьютекс responseMu
+		}
+	}
+}
+
+// RunVoteHistoryConsumer теперь будет просто обновлять UserProfilesHistory
+func (c *Consumer) RunVoteHistoryConsumer(ctx context.Context, wg *sync.WaitGroup) {
+	type JavaHistoryMessage struct {
+		UserID  string        `json:"userId"`
+		History []dto.History `json:"history"`
+	}
+
+	defer wg.Done()
+
+	// Создаем новый ридер для этого топика, как и раньше
+	historyReader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  []string{"localhost:9092"},             // Или ваш адрес Kafka-брокера
+		Topic:    "vote-history-response",                // Топик для истории профиля
+		GroupID:  "go-app-profile-history-updater-group", // Уникальная группа
+		MinBytes: 10e3,
+		MaxBytes: 10e6,
+	})
+	defer func() {
+		if err := historyReader.Close(); err != nil {
+			c.Log.Error("Failed to close Kafka reader for vote-history-response", slog.Any("error", err))
+		}
+	}()
+
+	c.Log.Info("Starting Kafka consumer for vote-history-response",
+		slog.String("topic", historyReader.Config().Topic),
+		slog.String("group_id", historyReader.Config().GroupID))
+
+	for {
+		select {
+		case <-ctx.Done():
+			c.Log.Info("Stopping Kafka consumer for vote-history-response...")
+			return
+		default:
+			msg, err := historyReader.ReadMessage(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					c.Log.Debug("Kafka read error during shutdown for vote-history-response", slog.Any("error", err))
+					continue
+				}
+				c.Log.Error("Kafka read error for vote-history-response", slog.String("error_details", err.Error()), slog.Any("full_error", err))
+				continue
+			}
+
+			var rawMessage string
+			if err := json.Unmarshal(msg.Value, &rawMessage); err != nil {
+				c.Log.Error("Failed to unmarshal Kafka message into raw string (likely double-encoded JSON)",
+					slog.Any("error", err),
+					slog.String("message_value", string(msg.Value)))
+				continue
+			}
+
+			var javaMsg JavaHistoryMessage
+			if err := json.Unmarshal([]byte(rawMessage), &javaMsg); err != nil {
+				c.Log.Error("Failed to unmarshal Java history message (check JSON structure vs DTO)",
+					slog.Any("error", err),
+					slog.String("raw_message_value", rawMessage))
+				continue
+			}
+
+			userAddress := javaMsg.UserID // <--- ПОЛУЧАЕМ userAddress ИЗ ЗНАЧЕНИЯ СООБЩЕНИЯ
+			if userAddress == "" {
+				c.Log.Warn("Received vote history message with empty userId in value. Skipping.",
+					slog.String("message_value", string(msg.Value)))
+				continue
+			}
+
+			receivedHistory := javaMsg.History
+
+			c.Log.Info("Successfully consumed vote history events",
+				slog.String("user_address", userAddress),
+				slog.Int("num_entries", len(receivedHistory)))
+
+			// ОБНОВЛЯЕМ ГЛОБАЛЬНУЮ МАПУ ИСТОРИИ ПРОФИЛЯ
+			c.Mu.Lock()
+			c.UserProfilesHistory[userAddress] = receivedHistory
+			c.Mu.Unlock()
+
+			c.Log.Info("User profile history map updated",
+				slog.String("user_address", userAddress),
+				slog.Int("history_count_in_map", len(c.UserProfilesHistory[userAddress])))
 		}
 	}
 }

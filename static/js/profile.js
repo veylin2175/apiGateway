@@ -1,8 +1,10 @@
+// profile.js
+
 document.addEventListener('DOMContentLoaded', function() {
     const connectWalletButton = document.getElementById('connectWallet');
     const profileInfo = document.getElementById('profileInfo');
     const userWalletAddress = document.getElementById('userWalletAddress');
-    const disconnectWalletButton = document.getElementById('disconnectWalletButton'); // НОВАЯ ПЕРЕМЕННАЯ
+    const disconnectWalletButton = document.getElementById('disconnectWalletButton');
 
     const headerWalletAddressSpan = document.querySelector('#profileInfoHeader .wallet-address');
     const headerCreatedCountSpan = document.querySelector('#profileInfoHeader .created-votings-count');
@@ -10,7 +12,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const createdVotingsCount = document.getElementById('createdVotingsCount');
     const participatedVotingsCount = document.getElementById('participatedVotingsCount');
-    const userVotingsTableBody = document.getElementById('userVotingsTableBody');
+    // УДАЛЯЕМ: const userVotingsTableBody = document.getElementById('userVotingsTableBody');
+
+    // НОВАЯ ПЕРЕМЕННАЯ: tbody для таблицы истории голосований
+    const profileHistoryTableBody = document.getElementById('profileHistoryTableBody');
+
 
     // Make fetchUserData globally accessible for app.js (пока не используется, но оставляем)
     window.fetchUserData = fetchUserData;
@@ -23,7 +29,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const userAddress = accounts[0];
                 localStorage.setItem('userAddress', userAddress);
                 displayProfile(userAddress);
-                fetchUserData(userAddress);
+                fetchUserDataAndHistory(userAddress); // ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
 
                 // Опционально: отправить событие регистрации на бэкенд
                 sendWalletConnectEventToBackend(userAddress);
@@ -60,8 +66,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (headerParticipatedCountSpan) {
                 headerParticipatedCountSpan.textContent = `Проголосовал: 0`;
             }
-            // Очищаем таблицу при новом подключении
-            userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Загрузка данных...</td></tr>`;
+            // УДАЛЯЕМ: userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Загрузка данных...</td></tr>`;
+
+            // Очищаем и устанавливаем сообщение о загрузке для истории
+            if (profileHistoryTableBody) {
+                profileHistoryTableBody.innerHTML = `<tr><td colspan="4" class="no-votings">История загружается...</td></tr>`;
+            }
 
         } else { // Если адрес null, то скрываем профиль и показываем кнопку подключения
             userWalletAddress.textContent = '';
@@ -78,7 +88,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (headerParticipatedCountSpan) {
                 headerParticipatedCountSpan.textContent = `Проголосовал: 0`;
             }
-            userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Для просмотра профиля подключите ваш MetaMask кошелек.</td></tr>`;
+            // УДАЛЯЕМ: userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Для просмотра профиля подключите ваш MetaMask кошелек.</td></tr>`;
+            if (profileHistoryTableBody) {
+                profileHistoryTableBody.innerHTML = `<tr><td colspan="4" class="no-votings">Для просмотра истории подключите ваш MetaMask кошелек.</td></tr>`;
+            }
         }
     };
 
@@ -111,7 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 
-    // --- fetchUserData (без изменений) ---
+    // --- fetchUserData: ОБНОВЛЕННАЯ ФУНКЦИЯ ---
     async function fetchUserData(userAddress) {
         try {
             const response = await fetch('/user-data', {
@@ -124,6 +137,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (response.ok) {
                 const userData = await response.json();
+                console.log('Received user data:', userData); // Проверяем полный ответ
 
                 createdVotingsCount.textContent = userData.created_votings_count;
                 participatedVotingsCount.textContent = userData.participated_votings_count;
@@ -135,10 +149,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     headerParticipatedCountSpan.textContent = `Проголосовал: ${userData.participated_votings_count}`;
                 }
 
-                renderUserVotingsTable(userData.votings);
+                // УДАЛЯЕМ: renderUserVotingsTable(userData.votings); // Рендерим таблицу созданных/участвующих голосований
+
+                // --- Рендеринг таблицы истории голосований ---
+                renderProfileHistoryTable(userData.history);
+                // --- КОНЕЦ БЛОКА ---
+
             } else {
                 const errorText = await response.text();
-                console.error('Ошибка при загрузке данных пользователя:', errorText);
+                console.error('Ошибка при загрузке данных пользователя:', response.status, errorText);
                 alert('Не удалось загрузить данные профиля: ' + errorText);
             }
         } catch (error) {
@@ -147,62 +166,52 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- renderUserVotingsTable (без изменений) ---
-    const renderUserVotingsTable = (votings) => {
-        userVotingsTableBody.innerHTML = '';
+    // --- НОВАЯ ФУНКЦИЯ: fetchUserDataAndHistory ---
+    // Эта функция будет вызывать fetchUserData и затем планировать повторный опрос
+    async function fetchUserDataAndHistory(userAddress) {
+        // Первый вызов для получения основной информации и инициирования запроса истории
+        await fetchUserData(userAddress);
 
-        if (!votings || votings.length === 0) {
-            userVotingsTableBody.innerHTML = `<tr><td colspan="5" class="no-votings">Вы пока не создали или не участвовали в голосованиях.</td></tr>`;
+        // Повторный вызов через несколько секунд для получения обновленной истории
+        // Даём время Kafka и Java-сервису обработать запрос
+        setTimeout(async () => {
+            console.log("Повторный запрос данных пользователя для обновления истории...");
+            await fetchUserData(userAddress); // Повторный вызов
+        }, 2500); // 2.5 секунды - можно настроить
+    }
+
+    // --- НОВАЯ ФУНКЦИЯ: renderProfileHistoryTable ---
+    const renderProfileHistoryTable = (history) => {
+        if (!profileHistoryTableBody) {
+            console.warn('Элемент #profileHistoryTableBody не найден в DOM.');
             return;
         }
 
-        votings.forEach(voting => {
+        profileHistoryTableBody.innerHTML = ''; // Очищаем таблицу перед заполнением
+
+        if (!history || history.length === 0) {
+            profileHistoryTableBody.innerHTML = `<tr><td colspan="4" class="no-votings">История голосований не найдена.</td></tr>`;
+            return;
+        }
+
+        history.forEach(entry => {
             const row = document.createElement('tr');
-
-            let statusText = voting.status;
-            let statusClass = '';
-
-            switch (voting.status) {
-                case 'Upcoming':
-                    statusClass = 'status-upcoming';
-                    break;
-                case 'Active':
-                    statusClass = 'status-active';
-                    break;
-                case 'Finished':
-                    statusClass = 'status-finished';
-                    break;
-                case 'Rejected':
-                    statusClass = 'status-rejected';
-                    break;
-                default:
-                    statusClass = 'status-unknown';
-            }
-
-            let userVerdictText = 'Не голосовал';
-            if (voting.user_vote !== undefined && voting.user_vote !== null) {
-                userVerdictText = `Вариант ${voting.user_vote + 1}`;
-            }
-
-            const votesCount = voting.votes_count || 0;
-            const votingType = voting.is_private ? 'Приватное' : 'Публичное';
-
             row.innerHTML = `
-            <td>${voting.title}</td>
-            <td>${votesCount}</td>
-            <td>${votingType}</td>
-            <td>${userVerdictText}</td>
-            <td class="${statusClass}">${statusText}</td>
-        `;
-            userVotingsTableBody.appendChild(row);
+                <td>${entry.title || 'Без названия'}</td>
+                <td>${entry.votersCount || 0}</td>
+                <td>${entry.isPrivate ? 'Да' : 'Нет'}</td>
+                <td>${entry.optionText || 'Не указан'}</td>
+            `;
+            profileHistoryTableBody.appendChild(row);
         });
     };
 
-    // --- Логика при загрузке страницы (без изменений, но использует модифицированную displayProfile) ---
+
+    // --- Логика при загрузке страницы: ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ fetchUserDataAndHistory ---
     const storedAddress = localStorage.getItem('userAddress');
     if (storedAddress) {
         displayProfile(storedAddress); // Обновить UI профиля
-        fetchUserData(storedAddress); // Загрузить данные с сервера
+        fetchUserDataAndHistory(storedAddress); // Загрузить данные с сервера и инициировать историю
     }
 
     // --- Обработчик изменения аккаунтов в MetaMask ---
@@ -212,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const newAddress = newAccounts[0];
                 localStorage.setItem('userAddress', newAddress);
                 displayProfile(newAddress);
-                fetchUserData(newAddress);
+                fetchUserDataAndHistory(newAddress); // ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
                 console.log('MetaMask account changed to:', newAddress);
             } else {
                 // Все аккаунты были отключены от DApp в MetaMask

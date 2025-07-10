@@ -630,3 +630,76 @@ body {
 .status-finished { color: #6c757d; } /* Серый */
 .status-rejected { color: #dc3545; } /* Красный */
 .status-unknown { color: #007bff; }  /* Синий по умолчанию */
+
+/* styles.css */
+
+/* Общие стили для таблиц (могут уже существовать) */
+.table-container {
+    margin-top: 20px;
+    overflow-x: auto; /* Позволяет прокручивать таблицу, если она слишком широкая */
+}
+
+.votings-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    background-color: #ffffff;
+}
+
+.votings-table th, .votings-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.votings-table th {
+    background-color: #f2f2f2;
+    color: #333;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.9em;
+}
+
+.votings-table tr:hover {
+    background-color: #f5f5f5;
+}
+
+/* Стили для строк "нет голосований" */
+.no-votings {
+    text-align: center;
+    font-style: italic;
+    color: #666;
+    padding: 20px !important; /* Увеличим отступы */
+}
+
+.history-table {
+    border: 1px solid #e0e0e0; /* Пример: чуть другая рамка */
+}
+
+/* Секция истории */
+.history-section {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.history-section h2 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.5em;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+/* Если хотите, чтобы заголовки ячеек истории были чуть меньше */
+.history-table th {
+    font-size: 0.85em;
+}
+
+/* Если хотите, чтобы данные в ячейках истории были чуть меньше */
+.history-table td {
+    font-size: 0.9em;
+}
