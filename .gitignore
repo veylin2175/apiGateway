@@ -1,2 +1,5 @@
 # env
 /config/local.yml
+
+# contract
+/cmd/contracts/main.go
