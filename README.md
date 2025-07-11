@@ -1,35 +1,5 @@
 # TrustVote: Децентрализованная Платформа для Голосования
 
-## Содержание
-
-1.  [Название проекта и описание](https://www.google.com/search?q=%231-%D0%BD%D0%B0%D0%B7%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82%D0%B0-%D0%B8-%D0%BE%D0%BF%D0%B8%D1%81%D0%B0%D0%BD%D0%B8%D0%B5)
-2.  [Возможности](https://www.google.com/search?q=%232-%D0%B2%D0%BE%D0%B7%D0%BC%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D0%B8)
-3.  [Обзор архитектуры](https://www.google.com/search?q=%233-%D0%BE%D0%B1%D0%B7%D0%BE%D1%80-%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D1%8B)
-4.  [Предварительные требования](https://www.google.com/search?q=%234-%D0%BF%D1%80%D0%B5%D0%B4%D0%B2%D0%B0%D1%80%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D1%8B%D0%B5-%D1%82%D1%80%D0%B5%D0%B1%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D1%8F)
-5.  [Руководство по установке и настройке](https://www.google.com/search?q=%235-%D1%80%D1%83%D0%BA%D0%BE%D0%B2%D0%BE%D0%B4%D1%81%D1%82%D0%B2%D0%BE-%D0%BF%D0%BE-%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BA%D0%B5-%D0%B8-%D0%BD%D0%B0%D1%81%D1%82%D1%80%D0%BE%D0%B9%D0%BA%D0%B5)
-      * [5.1. Смарт-контракты](https://www.google.com/search?q=%2351-%D1%81%D0%BC%D0%B0%D1%80%D1%82-%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%B0%D0%BA%D1%82%D1%8B)
-      * [5.2. Java Kafka Service](https://www.google.com/search?q=%2352-java-kafka-service)
-      * [5.3. Go API Gateway](https://www.google.com/search?q=%2353-go-api-gateway)
-      * [5.4. Фронтенд](https://www.google.com/search?q=%2354-%D1%84%D1%80%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D0%B4)
-6.  [Конфигурация](https://www.google.com/search?q=%236-%D0%BA%D0%BE%D0%BD%D1%84%D0%B8%D0%B3%D1%83%D1%80%D0%B0%D1%86%D0%B8%D1%8F)
-7.  [Использование](https://www.google.com/search?q=%237-%D0%B8%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5)
-      * [7.1. Общий процесс](https://www.google.com/search?q=%2371-%D0%BE%D0%B1%D1%89%D0%B8%D0%B9-%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81)
-      * [7.2. Стейкинг ETH](https://www.google.com/search?q=%2372-%D1%81%D1%82%D0%B5%D0%B9%D0%BA%D0%B8%D0%BD%D0%B3-eth)
-      * [7.3. Анстейкинг ETH](https://www.google.com/search?q=%2373-%D0%B0%D0%BD%D1%81%D1%82%D0%B5%D0%B9%D0%BA%D0%B8%D0%BD%D0%B3-eth)
-      * [7.4. Получение наград](https://www.google.com/search?q=%2374-%D0%BF%D0%BE%D0%BB%D1%83%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D0%BD%D0%B0%D0%B3%D1%80%D0%B0%D0%B4)
-      * [7.5. Подключение кошелька и профиль](https://www.google.com/search?q=%2375-%D0%BF%D0%BE%D0%B4%D0%BA%D0%BB%D1%8E%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D0%BA%D0%BE%D1%88%D0%B5%D0%BB%D1%8C%D0%BA%D0%B0-%D0%B8-%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8C)
-      * [7.6. Создание голосований (будущее/администратор)](https://www.google.com/search?q=%2376-%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5-%D0%B3%D0%BE%D0%BB%D0%BE%D1%81%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9-%D0%B1%D1%83%D0%B4%D1%83%D1%89%D0%B5%D0%B5%D0%B0%D0%B4%D0%BC%D0%B8%D0%BD%D0%B8%D1%81%D1%82%D1%80%D0%B0%D1%82%D0%BE%D1%80)
-      * [7.7. Участие в голосованиях](https://www.google.com/search?q=%2377-%D1%83%D1%87%D0%B0%D1%81%D1%82%D0%B8%D0%B5-%D0%B2-%D0%B3%D0%BE%D0%BB%D0%BE%D1%81%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D1%8F%D1%85)
-8.  [API-эндпоинты](https://www.google.com/search?q=%238-api-%D1%8D%D0%BD%D0%B4%D0%BF%D0%BE%D0%B8%D0%BD%D1%82%D1%8B)
-9.  [Kafka-топики](https://www.google.com/search?q=%239-kafka-%D1%82%D0%BE%D0%BF%D0%B8%D0%BA%D0%B8)
-10. [Схема базы данных (концептуальная)](https://www.google.com/search?q=%2310-%D1%81%D1%85%D0%B5%D0%BC%D0%B0-%D0%B1%D0%B0%D0%B7%D1%8B-%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85-%D0%BA%D0%BE%D0%BD%D1%86%D0%B5%D0%BF%D1%82%D1%83%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F)
-11. [Устранение неполадок](https://www.google.com/search?q=%2311-%D1%83%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5-%D0%BD%D0%B5%D0%BF%D0%BE%D0%BB%D0%B0%D0%B4%D0%BE%D0%BA)
-12. [Будущие улучшения](https://www.google.com/search?q=%2312-%D0%B1%D1%83%D0%B4%D1%83%D1%89%D0%B8%D0%B5-%D1%83%D0%BB%D1%83%D1%87%D1%88%D0%B5%D0%BD%D0%B8%D1%8F)
-13. [Участие в разработке](https://www.google.com/search?q=%2313-%D1%83%D1%87%D0%B0%D1%81%D1%82%D0%B8%D0%B5-%D0%B2-%D1%80%D0%B0%D0%B7%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%BA%D0%B5)
-14. [Лицензия](https://www.google.com/search?q=%2314-%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F)
-
------
-
 ## 1\. Название проекта и описание
 
 **TrustVote** — это децентрализованная платформа для голосования, построенная на блокчейне Ethereum. Она использует смарт-контракты для безопасного и прозрачного голосования, а также микросервисную архитектуру для масштабируемой обработки данных на бэкенде. Это DApp призвано обеспечить надежную систему для создания, участия и управления голосованиями с интегрированными механизмами стейкинга для стимулирования и обеспечения безопасности.
