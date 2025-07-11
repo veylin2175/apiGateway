@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	votingABIFile = "C:/Users/Matvey/Singularity/apiGateway/contracts/voting/Voting.json"
+	votingABIFile = "C:/Users/Matvey/Singularity/TrustVote/out/Voting.sol/Voting.json"
 )
 
 type ContractABI struct {

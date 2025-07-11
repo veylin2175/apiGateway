@@ -1,6 +1,7 @@
 package main
 
 import (
+	"apiGateway/internal/client"
 	"apiGateway/internal/config"
 	"apiGateway/internal/dto"
 	"apiGateway/internal/http-server/middleware/mwlogger"
@@ -12,9 +13,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,11 +30,16 @@ import (
 var (
 	log            *slog.Logger
 	kafkaProducer  *producer.Producer
+	votingClient   *client.VotingClient
 	votings        = make(map[string]models.VoteSession)
 	userActivities = make(map[string]models.UserActivity)
 	mu             sync.Mutex
 	err            error
 )
+
+type ConnectWalletRequest struct {
+	WalletAddress string `json:"walletAddress"`
+}
 
 const (
 	envLocal = "local"
@@ -87,7 +95,6 @@ func main() {
 	})
 	router.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
-	//router.Post("/voting", CreateVoting)
 	router.Get("/voting/{id}", GetVotingByID)
 	router.Get("/voting", GetAllVotings)
 	router.Post("/user-data", GetUserData(log, historyConsumer, kafkaProducer, userActivities, votings, rwmu))
@@ -121,45 +128,14 @@ func main() {
 		}
 	}()
 
-	/*votingClient, err := client.NewVotingClient(cfg, log)
+	votingClient, err = client.NewVotingClient(cfg, log)
 	if err != nil {
 		log.Error("Failed to create voting client: %v", err)
 	}
-	fmt.Println("\n--- Testing AddVoteSession ---")
-	testTitle := "Тестовое голосование из Go"
-	testDesc := "Это голосование создано из Go-бэкенда."
-	testStartTime := big.NewInt(time.Now().Unix())
-	testEndTime := big.NewInt(time.Now().Add(24 * time.Hour).Unix()) // Через 24 часа
-	testMinVotes := big.NewInt(1)
-	testIsPrivate := false
-	testVoters := []client.Voter{ // Пример одного голосующего
-		{Addr: votingClient.FromAddress, HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess},
-		{Addr: common.HexToAddress("0x70997970C51812dc3A0108C7934CDCc3FbF7b2cc"), HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess}, // Пример другого адреса из Hardhat
-	}
-	testChoices := []string{"Вариант A", "Вариант B", "Вариант C"}
 
-	txHash, err := votingClient.AddVoteSession(
-		testTitle,
-		testDesc,
-		testStartTime,
-		testEndTime,
-		testMinVotes,
-		testIsPrivate,
-		testVoters,
-		testChoices,
-	)
-	if err != nil {
-		log.Error("Failed to add vote session to blockchain", sl.Err(err))
-	} else {
-		log.Info("Vote session added to blockchain successfully", slog.String("tx_hash", txHash.Hex()))
-		// Вы можете дождаться подтверждения транзакции, если это необходимо
-		// bind.WaitMined(context.Background(), votingClient.client, tx)
-	}
+	/*address := cfg.Blockchain.WalletAddress
 
-	// --- Пример вызова метода контракта на чтение (getVotingParticipatedByAddress) ---
-	// Ваш существующий код
 	fmt.Println("\n--- Testing GetVotingParticipatedByAddress ---")
-	address := cfg.Blockchain.WalletAddress
 	participated, err := votingClient.GetVotingParticipatedByAddress(address)
 	if err != nil {
 		log.Error("Failed to get participated votes", sl.Err(err))
@@ -173,15 +149,6 @@ func main() {
 				fmt.Println(id.String())
 			}
 		}
-	}
-
-	// --- Пример вызова новой view-функции (GetVotingCount) ---
-	fmt.Println("\n--- Testing GetVotingCount ---")
-	voteCount, err := votingClient.GetVotingCount()
-	if err != nil {
-		log.Error("Failed to get vote count", sl.Err(err))
-	} else {
-		log.Info(fmt.Sprintf("Total vote sessions on contract: %s", voteCount.String()))
 	}*/
 
 	if err := srv.ListenAndServe(); err != nil {
@@ -228,10 +195,6 @@ func setupPrettySlog() *slog.Logger {
 	h := opts.NewPrettyHandler(os.Stdout)
 
 	return slog.New(h)
-}
-
-type ConnectWalletRequest struct {
-	WalletAddress string `json:"walletAddress"`
 }
 
 // ConnectWalletHandler - обработчик для подключения MetaMask
@@ -292,27 +255,50 @@ func CreateVotingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- Генерируем фиктивные ID для голосования и транзакции ---
-	// Это будет использовано в ответе фронтенду и в Kafka сообщении
-	votingID := fmt.Sprintf("vote_%d", time.Now().UnixNano()) // Уникальный ID голосования
-	txHash := fmt.Sprintf("0x%x", time.Now().UnixNano()*1000) // Фиктивный хеш транзакции
+	voters := []client.Voter{
+		{Addr: votingClient.FromAddress, HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess},
+		{Addr: common.HexToAddress("0x70997970C12345dc3A0108C7934CDCc3FbF7b2cc"), HasVoted: false, Choice: "", CanVote: client.VoteAccessHasAccess},
+	}
 
-	log.Info("Received request to create voting (blockchain skipped)",
-		slog.String("voting_id_generated", votingID),
+	tStart, _ := time.Parse(time.RFC3339, requestPayload.StartTime)
+	startTimeMs := tStart.UnixNano() / int64(time.Second)
+	startTime := big.NewInt(startTimeMs)
+
+	tEnd, _ := time.Parse(time.RFC3339, requestPayload.EndTime)
+	endTimeMs := tEnd.UnixNano() / int64(time.Second)
+	endTime := big.NewInt(endTimeMs)
+
+	minVotes := new(big.Int)
+	minVotes.SetInt64(requestPayload.MinNumberVotes)
+
+	bigVotingID, _, txHash, err := votingClient.AddVoteSession(
+		requestPayload.Title,
+		requestPayload.Description,
+		startTime,
+		endTime,
+		minVotes,
+		requestPayload.IsPrivate,
+		voters,
+		requestPayload.Choices,
+	)
+	if err != nil {
+		log.Error("Failed to add vote session to blockchain", sl.Err(err))
+	} else {
+		log.Info("Vote session added to blockchain successfully", slog.String("tx_hash", txHash.Hex()))
+	}
+
+	votingID := bigVotingID.String()
+
+	log.Info("Received request to create voting",
+		slog.String("voting_id", votingID),
 		slog.String("title", requestPayload.Title))
-
-	// --- БЛОКЧЕЙН ЛОГИКА ВРЕМЕННО УДАЛЕНА ИЛИ ЗАКОММЕНТИРОВАНА ---
-	// Здесь раньше был вызов:
-	// txHash, err := votingClient.AddVoteSession(...)
-	// if err != nil { ... }
-	// logger.Info("Vote session added to blockchain", slog.String("tx_hash", txHash.Hex()))
-	// -----------------------------------------------------------
 
 	// Подготовка данных для Kafka в точном формате dto.VotingReq
 	optionsForKafka := make([]dto.Option, len(requestPayload.Choices))
 	for i, choiceText := range requestPayload.Choices {
 		optionsForKafka[i] = dto.Option{
-			OptionID: fmt.Sprintf("%s_opt_%d", votingID, i+1), // Генерация уникального ID для каждой опции
+			//OptionID: fmt.Sprintf("%s_opt_%d", votingID, i+1), // Генерация уникального ID для каждой опции
+			OptionID: fmt.Sprintf("%d", i+1),
 			Text:     choiceText,
 		}
 	}
@@ -343,7 +329,6 @@ func CreateVotingHandler(w http.ResponseWriter, r *http.Request) {
 	// Возвращаем JSON-ответ фронтенду
 	responseBody := map[string]string{
 		"voting_id": votingID,
-		"tx_hash":   txHash, // Используем фиктивный хеш
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -362,6 +347,24 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		slog.Error("SubmitVote: Invalid request payload", sl.Err(err))
 		return
+	}
+
+	voteSessionID, ok := new(big.Int).SetString(req.VotingID, 10)
+	if !ok {
+		log.Error("Invalid vote_session_id format", slog.String("vote_session_id", req.VotingID))
+		http.Error(w, "Invalid vote_session_id", http.StatusBadRequest)
+		return
+	}
+	choiceIndex := big.NewInt(int64(req.SelectedOptionIndex))
+
+	txHash, err := votingClient.Vote(
+		voteSessionID,
+		choiceIndex,
+	)
+	if err != nil {
+		log.Error("Failed to add vote option to blockchain", sl.Err(err))
+	} else {
+		log.Info("Vote option added to blockchain successfully", slog.String("tx_hash", txHash.Hex()))
 	}
 
 	mu.Lock() // Блокируем доступ к общим данным
@@ -448,7 +451,7 @@ func SubmitVote(w http.ResponseWriter, r *http.Request) {
 	if req.SelectedOptionIndex >= 0 && req.SelectedOptionIndex < len(voting.Choices) {
 		// Предполагаем, что models.Choice имеет поле ID.
 		// Если нет, и OptionID хранится как `votingID_opt_index`, то генерируем:
-		optionIDToKafka = fmt.Sprintf("%s_opt_%d", req.VotingID, req.SelectedOptionIndex)
+		optionIDToKafka = fmt.Sprintf("%d", req.SelectedOptionIndex)
 		// Если Choice.ID существует:
 	} else {
 		slog.Error("SubmitVote: Internal error, invalid option index after checks",
