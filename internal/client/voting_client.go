@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
@@ -42,7 +43,6 @@ type VoteSessionCreatedEvent struct {
 const (
 	VoteAccessNoAccess uint8 = iota
 	VoteAccessHasAccess
-	VoteAccessOther // если есть другие
 )
 
 type VotingClient struct {
@@ -53,6 +53,20 @@ type VotingClient struct {
 	contractAddr   common.Address
 	privateKey     *ecdsa.PrivateKey // Приватный ключ для подписания транзакций
 	publicKeyECDSA *ecdsa.PublicKey
+	FromAddress    common.Address
+	log            *slog.Logger // Добавляем логгер
+}
+
+type StakeClient struct {
+	Client         *ethclient.Client
+	contract       *bind.BoundContract
+	StakeManager   *voting.ContractABI
+	cfg            *config.Config
+	contractABI    abi.ABI
+	contractAddr   common.Address
+	privateKey     *ecdsa.PrivateKey // Приватный ключ для подписания транзакций
+	publicKeyECDSA *ecdsa.PublicKey
+	publicKey      common.Address
 	FromAddress    common.Address
 	log            *slog.Logger // Добавляем логгер
 }
@@ -114,6 +128,90 @@ func NewVotingClient(cfg *config.Config, log *slog.Logger) (*VotingClient, error
 		publicKeyECDSA: publicKeyECDSA,
 		FromAddress:    fromAddress,
 		log:            log,
+	}, nil
+}
+
+func NewStakeClient(cfg *config.Config, log *slog.Logger) (*StakeClient, error) {
+	log.Info("Attempting to create new stake client...")
+
+	if cfg == nil {
+		log.Error("Config is nil during StakeClient creation.")
+		return nil, fmt.Errorf("config is nil")
+	}
+	if cfg.Blockchain.RpcUrl == "" {
+		log.Error("RPC URL is empty in config.")
+		return nil, fmt.Errorf("RPC URL is empty")
+	}
+	rpcURL := cfg.Blockchain.RpcUrl
+	log.Info("Connecting to RPC", "url", rpcURL)
+	client, err := ethclient.Dial(rpcURL)
+	if err != nil {
+		log.Error("Failed to connect to Ethereum client", "url", rpcURL, "error", err)
+		return nil, fmt.Errorf("failed to connect to Ethereum client: %w", err)
+	}
+	log.Info("Successfully connected to Ethereum client.")
+
+	// И так далее для каждой проверки...
+	// Например:
+	if cfg.Blockchain.StakeManagerContractAddress == "" {
+		log.Error("Stake manager contract address is empty in config.")
+		return nil, fmt.Errorf("stake manager contract address is empty")
+	}
+
+	//rpcURL := cfg.Blockchain.RpcUrl
+	if !strings.HasPrefix(rpcURL, "http://") && !strings.HasPrefix(rpcURL, "https://") {
+		rpcURL = "http://" + rpcURL
+	}
+
+	//client, err := ethclient.Dial(rpcURL)
+	/*if err != nil {
+		return nil, fmt.Errorf("failed to connect to Ethereum node at %s: %v", rpcURL, err)
+	}*/
+
+	contractABI, err := voting.GetStakeABI()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load contract ABI: %v", err)
+	}
+
+	if cfg.Blockchain.StakeManagerContractAddress == "" {
+		return nil, fmt.Errorf("contract address is required")
+	}
+	if !common.IsHexAddress(cfg.Blockchain.StakeManagerContractAddress) {
+		return nil, fmt.Errorf("invalid contract address format: %s", cfg.Blockchain.StakeManagerContractAddress)
+	}
+	contractAddr := common.HexToAddress(cfg.Blockchain.StakeManagerContractAddress)
+
+	privateKey, err := crypto.HexToECDSA(cfg.Blockchain.PrivateKey)
+	if err != nil {
+		log.Error("Failed to parse private key", "error", err)
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	// Вычисляем публичный адрес из приватного ключа
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
+	}
+	publicKeyAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	if fromAddress.Hex() != strings.ToLower(cfg.Blockchain.WalletAddress) && fromAddress.Hex() != cfg.Blockchain.WalletAddress {
+		log.Warn("Configured WalletAddress does not match address derived from PrivateKey",
+			slog.String("derived_address", fromAddress.Hex()),
+			slog.String("config_address", cfg.Blockchain.WalletAddress))
+	}
+
+	return &StakeClient{
+		Client:       client,
+		contract:     bind.NewBoundContract(contractAddr, contractABI, client, client, client),
+		cfg:          cfg,
+		contractABI:  contractABI,
+		contractAddr: contractAddr,
+		privateKey:   privateKey,
+		publicKey:    publicKeyAddress,
+		FromAddress:  fromAddress,
+		log:          log,
 	}, nil
 }
 
@@ -335,4 +433,99 @@ func (vc *VotingClient) Vote(voteSessionID *big.Int, indChoice *big.Int) (common
 	vc.log.Info("Vote transaction sent", slog.String("tx_hash", tx.Hash().Hex()))
 
 	return tx.Hash(), nil
+}
+
+// Stake вызывает функцию stake из контракта, отправляя ETH
+func (sc *StakeClient) Stake(amount *big.Int) (common.Hash, error) {
+	nonce, err := sc.Client.PendingNonceAt(context.Background(), sc.FromAddress)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
+	}
+
+	gasPrice, err := sc.Client.SuggestGasPrice(context.Background())
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %w", err)
+	}
+
+	auth, err := bind.NewKeyedTransactorWithChainID(sc.privateKey, big.NewInt(31337)) // ChainID для Anvil
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to create transactor: %w", err)
+	}
+
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Value = amount            // <--- Самое важное: прикрепляем ETH к транзакции
+	auth.GasLimit = uint64(300000) // Лимит газа для функции stake
+	auth.GasPrice = gasPrice
+
+	sc.log.Info("Preparing to send stake transaction",
+		slog.Any("amount_wei", amount), // Логируем сумму в Wei
+		slog.String("from_address", sc.FromAddress.Hex()))
+
+	tx, err := sc.contract.Transact(auth, "stake") // Вызываем функцию stake без аргументов
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send stake transaction: %w", err)
+	}
+
+	sc.log.Info("Stake transaction sent", slog.String("tx_hash", tx.Hash().Hex()))
+
+	return tx.Hash(), nil
+}
+
+// Unstake отправляет транзакцию для вывода застейканного ETH
+func (sc *StakeClient) Unstake() (common.Hash, error) {
+	chainID, err := sc.Client.ChainID(context.Background())
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	auth, err := bind.NewKeyedTransactorWithChainID(sc.privateKey, chainID)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to create transactor: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "unstake") // Используем Auth, который был инициализирован в NewVotingClient
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send unstake transaction: %w", err)
+	}
+
+	return tx.Hash(), nil
+}
+
+// GetTokens отправляет транзакцию для получения токенов (наград)
+func (sc *StakeClient) GetTokens(ctx context.Context) (*types.Transaction, error) { // Убрали stakerAddress, т.к. он из PrivateKey
+	if sc == nil {
+		return nil, errors.New("stake client is nil")
+	}
+
+	nonce, err := sc.Client.PendingNonceAt(ctx, sc.publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending nonce for %s: %w", sc.publicKey.Hex(), err)
+	}
+
+	gasPrice, err := sc.Client.SuggestGasPrice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to suggest gas price: %w", err)
+	}
+
+	chainID, err := sc.Client.ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	auth, err := bind.NewKeyedTransactorWithChainID(sc.privateKey, chainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transactor: %w", err)
+	}
+
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Value = big.NewInt(0) // Эта функция не отправляет ETH
+	auth.GasLimit = 300000     // Адекватный лимит газа
+	auth.GasPrice = gasPrice
+
+	tx, err := sc.GetTokens(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to send getTokens transaction: %w", err)
+	}
+
+	sc.log.Info("GetTokens transaction sent", "tx_hash", tx.Hash().Hex(), "from_address", sc.publicKey.Hex())
+	return tx, nil
 }

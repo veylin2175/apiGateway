@@ -703,3 +703,73 @@ body {
 .history-table td {
     font-size: 0.9em;
 }
+
+.profile-button {
+    background-color: #4CAF50; /* Зеленый цвет для кнопки */
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin: 5px; /* Небольшой отступ */
+    transition: background-color 0.3s ease;
+}
+
+.profile-button:hover {
+    background-color: #45a049;
+}
+
+.unstake-button {
+    background-color: #007bff; /* Пример: синий фон */
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    margin-left: 10px; /* Отступ от соседних элементов */
+    transition: background-color 0.3s ease; /* Плавный переход при наведении */
+}
+
+.unstake-button:hover {
+    background-color: #0056b3; /* Чуть темнее при наведении */
+}
+
+.profile-button,
+.unstake-button,
+.claim-button { /* Добавляем claim-button */
+    background-color: #28a745; /* Зеленый цвет для кнопки "Stake" (или другой) */
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-right: 10px; /* Отступ между кнопками */
+    transition: background-color 0.3s ease;
+}
+
+.profile-button:hover,
+.unstake-button:hover,
+.claim-button:hover { /* Ховер для всех кнопок */
+    background-color: #218838;
+}
+
+/* Специфичный стиль для кнопки Unstake, если нужен другой цвет */
+.unstake-button {
+    background-color: #dc3545; /* Красный для Unstake */
+}
+.unstake-button:hover {
+    background-color: #c82333;
+}
+
+/* Специфичный стиль для кнопки Claim, если нужен другой цвет (например, синий) */
+.claim-button {
+    background-color: #007bff; /* Синий для Claim */
+}
+.claim-button:hover {
+    background-color: #0056b3;
+}
+
+/* ... (Остальные стили) ... */

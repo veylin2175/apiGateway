@@ -28,13 +28,13 @@ type Kafka struct {
 }
 
 type Blockchain struct {
-	RpcUrl                string `yaml:"rpc_url" env-required:"true"`
-	WalletAddress         string `yaml:"wallet_address" env-required:"true"`
-	VotingContractAddress string `yaml:"voting_contract_address" env-required:"true"`
-	TokenContractAddress  string `yaml:"token_contract_address" env-required:"true"`
-	//StakeManagerContractAddress string `yaml:"stake_manager_contract_address" env-required:"true"`
-	PrivateKey string `yaml:"private_key" env-required:"true"`
-	ChainID    int64  `yaml:"chain_id" env-default:"31337"`
+	RpcUrl                      string `yaml:"rpc_url" env-required:"true"`
+	WalletAddress               string `yaml:"wallet_address" env-required:"true"`
+	VotingContractAddress       string `yaml:"voting_contract_address" env-required:"true"`
+	TokenContractAddress        string `yaml:"token_contract_address" env-required:"true"`
+	StakeManagerContractAddress string `yaml:"stake_manager_contract_address" env-required:"true"`
+	PrivateKey                  string `yaml:"private_key" env-required:"true"`
+	ChainID                     int64  `yaml:"chain_id" env-default:"31337"`
 }
 
 // MustLoad выгружает данные с конфига по пути до файла
