@@ -5,6 +5,7 @@ import (
 	"apiGateway/internal/config"
 	"apiGateway/internal/dto"
 	"apiGateway/internal/http-server/middleware/mwlogger"
+	"apiGateway/internal/http-server/resp"
 	"apiGateway/internal/kafka/consumer"
 	"apiGateway/internal/kafka/producer"
 	"apiGateway/internal/lib/logger/handlers/slogpretty"
@@ -14,8 +15,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/render"
 	"log/slog"
 	"math/big"
 	"net/http"
@@ -31,6 +34,7 @@ var (
 	log            *slog.Logger
 	kafkaProducer  *producer.Producer
 	votingClient   *client.VotingClient
+	stakeClient    *client.StakeClient
 	votings        = make(map[string]models.VoteSession)
 	userActivities = make(map[string]models.UserActivity)
 	mu             sync.Mutex
@@ -39,6 +43,10 @@ var (
 
 type ConnectWalletRequest struct {
 	WalletAddress string `json:"walletAddress"`
+}
+
+type UnstakeRequest struct {
+	StakerAddress string `json:"staker_address"` // Адрес, который хочет вывести ETH
 }
 
 const (
@@ -80,6 +88,16 @@ func main() {
 	}
 	defer kafkaProducer.Close()
 
+	votingClient, err = client.NewVotingClient(cfg, log)
+	if err != nil {
+		log.Error("Failed to create voting client: %v", err)
+	}
+
+	stakeClient, err = client.NewStakeClient(cfg, log)
+	if err != nil {
+		log.Error("Failed to create stake client: %v", err)
+		os.Exit(1)
+	}
 	router := chi.NewRouter()
 
 	router.Use(middleware.RequestID)
@@ -101,6 +119,9 @@ func main() {
 	router.Post("/vote", SubmitVote)
 	router.Post("/connect-wallet", ConnectWalletHandler)
 	router.Post("/voting", CreateVotingHandler)
+	router.Post("/staking", StakeHandler(log, stakeClient))
+	router.Post("/unstake", UnstakeHandler(log, stakeClient))
+	router.Post("/get_tokens", GetTokensHandler(log, stakeClient))
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Address))
 
@@ -115,7 +136,7 @@ func main() {
 	// Горутина для регулярного обновления статусов голосований
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(30 * time.Second) // Проверяем каждые 30 секунд
+		ticker := time.NewTicker(10 * time.Second) // Проверяем каждые 10 секунд
 		defer ticker.Stop()
 		for {
 			select {
@@ -127,11 +148,6 @@ func main() {
 			}
 		}
 	}()
-
-	votingClient, err = client.NewVotingClient(cfg, log)
-	if err != nil {
-		log.Error("Failed to create voting client: %v", err)
-	}
 
 	/*address := cfg.Blockchain.WalletAddress
 
@@ -336,6 +352,175 @@ func CreateVotingHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+}
+
+// StakeHandler - обрабатывает запрос на стейкинг
+func StakeHandler(
+	log *slog.Logger,
+	stakeClient *client.StakeClient,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var requestPayload struct {
+			Amount        float64 `json:"amount"`         // Сумма в ETH (например, 0.1)
+			StakerAddress string  `json:"staker_address"` // Адрес стейкера
+		}
+
+		err := json.NewDecoder(r.Body).Decode(&requestPayload)
+		if err != nil {
+			log.Error("Failed to decode stake request", sl.Err(err))
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+
+		// --- Преобразуем ETH в Wei ---
+		// 1 ETH = 10^18 Wei
+		amountInWei := big.NewInt(int64(requestPayload.Amount * 1e18)) // Осторожно: это может потерять точность для нецелых ETH
+		// Лучше использовать пакет decimal или функцию ethutil.ParseEther
+		// Для простоты, пока будем так, но в продакшене это неточно
+		// Пример более точного преобразования:
+		// amountFloat := big.NewFloat(requestPayload.Amount)
+		// ethToWei := new(big.Float).Mul(amountFloat, big.NewFloat(1e18))
+		// amountInWei, _ := ethToWei.Int(nil) // Преобразуем в big.Int
+
+		if amountInWei.Cmp(big.NewInt(0)) <= 0 {
+			log.Error("Stake amount must be greater than zero", slog.Float64("amount", requestPayload.Amount))
+			http.Error(w, "Stake amount must be greater than zero", http.StatusBadRequest)
+			return
+		}
+
+		log.Info("Received request to stake ETH",
+			slog.Float64("amount_eth", requestPayload.Amount),
+			slog.String("staker_address", requestPayload.StakerAddress),
+			slog.Any("amount_wei", amountInWei))
+
+		// --- Вызов метода Stake на блокчейне ---
+		txHash, err := stakeClient.Stake(amountInWei)
+		if err != nil {
+			log.Error("Failed to send Stake transaction to blockchain", sl.Err(err))
+			http.Error(w, fmt.Sprintf("Failed to stake ETH on blockchain: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("Stake transaction sent", slog.String("tx_hash", txHash.Hex()))
+
+		// --- Ожидание подтверждения транзакции ---
+		fmt.Println("Waiting for blockchain transaction to be mined for staking...")
+		receipt, err := waitForTransactionReceipt(r.Context(), stakeClient, txHash, log) // Используем вспомогательную функцию
+		if err != nil {
+			log.Error("Failed to get transaction receipt or stake transaction failed", sl.Err(err), slog.String("tx_hash", txHash.Hex()))
+			http.Error(w, fmt.Sprintf("Blockchain stake transaction failed or timed out: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		if receipt.Status == 0 {
+			log.Error("Blockchain stake transaction reverted!", slog.String("tx_hash", txHash.Hex()))
+			http.Error(w, "Blockchain stake transaction reverted. Check contract logic or sender balance.", http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("Blockchain stake transaction successfully mined and executed!", slog.String("tx_hash", txHash.Hex()))
+
+		// --- Возвращаем ответ фронтенду ---
+		responseBody := map[string]string{
+			"message": "ETH staked successfully!",
+			"tx_hash": txHash.Hex(),
+			"status":  "success",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		err = json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			log.Error("Failed to encode response body for StakeHandler", sl.Err(err))
+			return
+		}
+	}
+}
+
+func UnstakeHandler(log *slog.Logger, sc *client.StakeClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if sc == nil {
+			log.Error("StakeClient is nil in UnstakeHandler! This should not happen.")
+			http.Error(w, "Service is not properly initialized.", http.StatusInternalServerError)
+			return
+		}
+		log.Info("Received request to unstake ETH")
+
+		var req UnstakeRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			log.Error("Failed to decode unstake request", sl.Err(err))
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Логируем полученные данные (для отладки)
+		log.Info("Received request to unstake ETH",
+			slog.String("staker_address", req.StakerAddress),
+		)
+
+		// Важно: Адрес, который стейкает, берется из приватного ключа сервиса
+		// (который в config.yaml), а не из req.StakerAddress.
+		// req.StakerAddress используется только для логирования или потенциальных проверок.
+		// Фактическая транзакция будет подписана приватным ключом, настроенным в VotingClient.
+
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second) // Увеличиваем таймаут
+		defer cancel()
+
+		// Вызываем функцию Unstake из VotingClient
+		txHash, err := sc.Unstake() // Функция Unstake не принимает аргументов
+		if err != nil {
+			log.Error("Failed to send Unstake transaction to blockchain", sl.Err(err))
+			http.Error(w, fmt.Sprintf("Failed to unstake ETH: %s", err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("Unstake transaction sent", slog.String("tx_hash", txHash.Hex()))
+
+		// Ожидаем подтверждения транзакции
+		log.Info("Waiting for blockchain transaction to be mined for unstaking...")
+		receipt, err := waitForTransactionReceipt(ctx, sc, txHash, log) // Используем вспомогательную функцию
+		if err != nil {
+			log.Error("Failed to get transaction receipt for unstake", sl.Err(err), slog.String("tx_hash", txHash.Hex()))
+			http.Error(w, fmt.Sprintf("Transaction for unstake failed or timed out: %s", err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		if receipt.Status == types.ReceiptStatusFailed {
+			log.Error("Unstake transaction failed on chain", slog.String("tx_hash", txHash.Hex()))
+			http.Error(w, "Unstake transaction failed on blockchain", http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("Unstake transaction successfully mined", slog.String("tx_hash", txHash.Hex()))
+
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(map[string]string{
+			"message": "Unstake transaction sent and mined successfully",
+			"tx_hash": txHash.Hex(),
+		})
+		if err != nil {
+			return
+		}
+	}
+}
+
+func waitForTransactionReceipt(ctx context.Context, sc *client.StakeClient, txHash common.Hash, log *slog.Logger) (*types.Receipt, error) {
+	const maxRetries = 60                 // Попробуем до 60 раз
+	const retryInterval = 1 * time.Second // Каждую секунду
+
+	for i := 0; i < maxRetries; i++ {
+		receipt, err := sc.Client.TransactionReceipt(ctx, txHash)
+		if err != nil {
+			if err.Error() == "not found" {
+				log.Debug("Transaction receipt not yet available. Retrying...", slog.String("tx_hash", txHash.Hex()))
+				time.Sleep(retryInterval)
+				continue
+			}
+			return nil, fmt.Errorf("failed to get transaction receipt for %s: %w", txHash.Hex(), err)
+		}
+		return receipt, nil // Квитанция получена
+	}
+	return nil, fmt.Errorf("timed out waiting for transaction receipt for tx_hash: %s", txHash.Hex())
 }
 
 // SubmitVote - хендлер для обработки голосования пользователя
@@ -676,6 +861,52 @@ func GetUserData(
 			log.Error("GetUserData: Failed to encode responsePayload", sl.Err(err))
 			return
 		}
+	}
+}
+
+// GetTokensHandler обрабатывает запросы на получение токенов (наград)
+func GetTokensHandler(log *slog.Logger, sc *client.StakeClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Защита от nil-клиента
+		if sc == nil {
+			log.Error("StakeClient is nil in GetTokensHandler. Service not initialized properly.")
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.Error("Internal server error: stake client not initialized"))
+			return
+		}
+
+		log.Info("Received request to get tokens")
+
+		// Вызов метода GetTokens клиента блокчейна
+		// Здесь не нужно передавать stakerAddress, так как он берется из PrivateKey
+		tx, err := sc.GetTokens(r.Context())
+		if err != nil {
+			log.Error("Failed to send GetTokens transaction to blockchain", "error", err)
+			// Более умная обработка ошибок контракта по строковому совпадению (или через парсинг)
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "CooldownClaimNotReached") {
+				render.Status(r, http.StatusTooManyRequests) // 429 Too Many Requests
+				render.JSON(w, r, resp.Error("Claim cooldown period not reached yet"))
+			} else if strings.Contains(errMsg, "NothingToClaim") {
+				render.Status(r, http.StatusNotFound) // 404 Not Found, т.к. нет ничего для клейма
+				render.JSON(w, r, resp.Error("Nothing to claim"))
+			} else if strings.Contains(errMsg, "NotEnoughBalanceOnContract") {
+				render.Status(r, http.StatusInternalServerError) // Это проблема контракта/пула
+				render.JSON(w, r, resp.Error("Contract does not have enough tokens to fulfill claim"))
+			} else if strings.Contains(errMsg, "TransferFailed") {
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.Error("Token transfer failed on contract"))
+			} else {
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.Error("Failed to get tokens: "+errMsg))
+			}
+			return
+		}
+
+		log.Info("GetTokens transaction successful", "tx_hash", tx.Hash().Hex())
+
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, resp.OK("GetTokens transaction sent successfully", map[string]string{"tx_hash": tx.Hash().Hex()}))
 	}
 }
 
